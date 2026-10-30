@@ -46,3 +46,7 @@ Pasted text and screenshots are processed in memory and never saved. A saved run
 ## Demo page
 
 `/demo` has a hero, a 3-step explainer, four `<video controls>` slots and a plain "Built on Qloo" section. Drop recordings in `public/clips/` (see the README there).
+
+## Live Qloo
+
+With `QLOO_API_KEY` set in `.env`, every call goes to `https://hackathon.api.qloo.com` (GET, `X-Api-Key` header). Liked names are resolved to entity ids with `/search` (artists, films, brands, people) or to place tags with `/v2/tags?filter.parents.types=urn:entity:place` (hobbies, foods, generic places). `/v2/insights` is then called for `urn:entity:place`, `urn:entity:brand`, `urn:entity:movie` and `urn:tag` (the tags behind the Predictive inference), with `signal.interests.entities` / `signal.interests.tags`, `filter.exclude.tags`, and `filter.exclude.entities` for gifts used in the chat's other occasions. The result badge says "Live Qloo data" only when every pick on screen came from Qloo. If a call fails or times out (25 s), that piece falls back to labeled sample data (`[sample]` names, "Sample" tags, the badge reads "Part sample data" or "Sample data, not real Qloo"); sample data is never shown as real. Set `QLOO_LOG_FILE` to append one line per Qloo call (endpoint, params, status, result count, ms); the key is scrubbed from every line. Test fixtures in `test/fixtures/qloo/` keep the real response shapes but contain made-up names and ids only.

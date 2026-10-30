@@ -1,0 +1,53 @@
+{
+ "success": true,
+ "results": {
+  "entities": [
+   {
+    "name": "Fixture Film",
+    "entity_id": "FIXTURE-MOVIE-1",
+    "type": "urn:entity",
+    "subtype": "urn:entity:movie",
+    "popularity": 0.9,
+    "location": null,
+    "properties": {
+     "short_description": "A made-up brand for tests."
+    },
+    "tags": [
+     {
+      "id": "urn:tag:genre:brand:fixture",
+      "name": "Fixture goods",
+      "type": "urn:tag:genre:brand",
+      "weight": null
+     },
+     {
+      "id": "urn:tag:other",
+      "name": "Other",
+      "type": "urn:tag:genre:brand",
+      "weight": null
+     }
+    ],
+    "references": null,
+    "query": {
+     "affinity": 0.9,
+     "measurements": {
+      "audience_growth": 0
+     },
+     "explainability": {
+      "signal.interests.entities": [
+       {
+        "entity_id": "FIXTURE-ARTIST-1",
+        "score": 0.55
+       },
+       {
+        "entity_id": "FIXTURE-ARTIST-2",
+        "score": 0.5
+       }
+      ]
+     }
+    },
+    "external": {}
+   }
+  ]
+ },
+ "query": {}
+}

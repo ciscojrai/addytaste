@@ -78,10 +78,13 @@ export function buildSearchParams(query: string, category: Category): Record<str
   return { query, ...(type ? { types: type } : {}), take: 3 };
 }
 
-/** GET /v2/tags params (a like to tag ids). */
-export function buildTagParams(query: string): Record<string, Param> {
-  return { 'filter.query': query, take: 3 };
+/** GET /v2/tags params (a like to tag ids). `scope` limits tags to ones that apply to places or brands. */
+export function buildTagParams(query: string, scope?: 'place' | 'brand'): Record<string, Param> {
+  return { 'filter.query': query, ...(scope ? { 'filter.parents.types': TYPE[scope] } : {}), take: 3 };
 }
+
+/** Qloo tags that say nothing about taste. */
+const GENERIC_TAGS = new Set(['place', 'other']);
 
 export interface QlooEntity {
   id: string;
@@ -97,12 +100,13 @@ export interface QlooEntity {
 }
 export interface QlooTag { id: string; name: string }
 
-export type Fetcher = (url: string, init?: { headers?: Record<string, string> }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+export type Fetcher = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 export interface QlooClient {
   mode: 'live' | 'sample';
   search(query: string, category: Category): Promise<{ id: string; name: string } | null>;
-  findTag(query: string): Promise<QlooTag | null>;
+  /** `scope` prefers tags that apply to that kind of entity (places or brands), then any tag. */
+  findTag(query: string, scope?: 'place' | 'brand'): Promise<QlooTag | null>;
   insights(o: InsightsOpts, sampleKey: string): Promise<{ entities: QlooEntity[]; tags: QlooTag[] }>;
 }
 
@@ -114,7 +118,10 @@ export interface QlooConfig {
   samplesDir?: string;
   /** Used only in sample mode to place sample pins. */
   cityCenter?: { lat: number; lon: number };
+  /** One line per Qloo call: time, method, path and params (never the key), status, result count, milliseconds. */
   log?: (line: string) => void;
+  /** Per-call timeout in live mode (ms). */
+  timeoutMs?: number;
 }
 
 const CITY_CENTERS: Record<string, { lat: number; lon: number }> = {
@@ -156,13 +163,21 @@ export function parseEntity(raw: Json, seedIds: string[], sample: boolean): Qloo
   const id = String(raw?.entity_id ?? raw?.id ?? '');
   const name0 = String(raw?.name ?? '').trim();
   if (!id || !name0) return null;
-  const tags: string[] = (Array.isArray(raw.tags) ? raw.tags : []).map((t: Json | string) => (typeof t === 'string' ? t : String(t?.name ?? ''))).filter(Boolean);
-  const loc = raw.location ?? raw.properties?.geocode ?? {};
+  const tags: string[] = [...new Set((Array.isArray(raw.tags) ? raw.tags : []).map((t: Json | string) => (typeof t === 'string' ? t : String(t?.name ?? '')).trim()).filter((t: string) => t && !GENERIC_TAGS.has(t.toLowerCase())))] as string[];
+  const loc = raw.location ?? {};
   const lat = Number(loc.lat ?? loc.latitude);
   const lon = Number(loc.lon ?? loc.lng ?? loc.longitude);
   const explain: Record<string, number> = {};
   const ex = raw.query?.explainability;
-  if (Array.isArray(ex)) {
+  // Live shape: query.explainability["signal.interests.entities"] = [{ entity_id, score }]
+  const live = ex && !Array.isArray(ex) ? ex['signal.interests.entities'] : undefined;
+  if (Array.isArray(live)) {
+    for (const e of live) {
+      const k = String(e?.entity_id ?? '');
+      const sc = Number(e?.score);
+      if (k && Number.isFinite(sc)) explain[k] = sc;
+    }
+  } else if (Array.isArray(ex)) {
     for (const e of ex) {
       const k = String(e?.entity_id ?? e?.id ?? '');
       const s = Number(e?.score ?? e?.value);
@@ -174,7 +189,7 @@ export function parseEntity(raw: Json, seedIds: string[], sample: boolean): Qloo
       if (seedIds.includes(k) && Number.isFinite(s)) explain[k] = s;
     }
   }
-  const address = raw.properties?.address ?? raw.address ?? raw.properties?.geocode?.formatted_address;
+  const address = raw.properties?.address ?? raw.address;
   return {
     id,
     name: sample && !name0.startsWith(SAMPLE_PREFIX) ? SAMPLE_PREFIX + name0 : name0,
@@ -190,9 +205,10 @@ export function parseEntity(raw: Json, seedIds: string[], sample: boolean): Qloo
 
 export function parseTags(json: Json): QlooTag[] {
   const list = json?.results?.tags ?? json?.results ?? json?.tags ?? [];
+  const seen = new Set<string>();
   return (Array.isArray(list) ? list : [])
     .map((t: Json) => ({ id: String(t?.id ?? t?.tag_id ?? ''), name: String(t?.name ?? t?.tag ?? '').trim() }))
-    .filter((t: QlooTag) => t.id && t.name);
+    .filter((t: QlooTag) => t.id && t.name && !seen.has(t.name.toLowerCase()) && !!seen.add(t.name.toLowerCase()));
 }
 
 export function createQlooClient(cfg: QlooConfig = {}): QlooClient {
@@ -202,14 +218,34 @@ export function createQlooClient(cfg: QlooConfig = {}): QlooClient {
   const samplesDir = cfg.samplesDir ?? join(process.cwd(), '.samples', 'qloo');
   const log = cfg.log ?? (() => {});
 
+  const timeoutMs = cfg.timeoutMs ?? 25000;
+  const countOf = (path: string, json: Json): number => {
+    const r = json?.results;
+    if (path === '/search') return Array.isArray(r) ? r.length : 0;
+    const list = r?.entities ?? r?.tags ?? (Array.isArray(r) ? r : []);
+    return Array.isArray(list) ? list.length : 0;
+  };
+
   async function get(path: string, params: Record<string, Param>): Promise<Json> {
-    const url = `${base}${path}?${toQuery(params)}`;
-    const res = await f(url, { headers: { 'X-Api-Key': apiKey, accept: 'application/json' } });
+    const q = toQuery(params);
+    const url = `${base}${path}?${q}`;
+    const t0 = Date.now();
+    const stamp = () => `${new Date().toISOString()} GET ${path}?${q}`;
+    let res: Awaited<ReturnType<Fetcher>>;
+    try {
+      res = await f(url, { headers: { 'X-Api-Key': apiKey, accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (e) {
+      const why = (e as Error).name === 'TimeoutError' || (e as Error).name === 'AbortError' ? 'timeout' : 'network error';
+      log(`${stamp()} -> ${why} ${Date.now() - t0}ms`);
+      throw new Error(`Qloo ${path} failed (${why})`);
+    }
     if (!res.ok) {
-      log(`qloo ${path} -> ${res.status}`);
+      log(`${stamp()} -> ${res.status} ${Date.now() - t0}ms`);
       throw new Error(`Qloo ${path} returned ${res.status}`);
     }
-    return (await res.json()) as Json;
+    const json = (await res.json()) as Json;
+    log(`${stamp()} -> ${res.status} results=${countOf(path, json)} ${Date.now() - t0}ms`);
+    return json;
   }
 
   if (apiKey) {
@@ -222,7 +258,11 @@ export function createQlooClient(cfg: QlooConfig = {}): QlooClient {
         const id = hit && String(hit.entity_id ?? hit.id ?? '');
         return hit && id ? { id, name: String(hit.name ?? query) } : null;
       },
-      async findTag(query) {
+      async findTag(query, scope) {
+        if (scope) {
+          const scoped = parseTags(await get('/v2/tags', buildTagParams(query, scope)));
+          if (scoped[0]) return scoped[0];
+        }
         const tags = parseTags(await get('/v2/tags', buildTagParams(query)));
         return tags[0] ?? null;
       },
@@ -230,6 +270,7 @@ export function createQlooClient(cfg: QlooConfig = {}): QlooClient {
         const json = await get('/v2/insights', buildInsightsParams(o));
         const seeds = o.entityIds ?? [];
         const results = json?.results ?? {};
+        // The urn:tag call answers with results.tags[{ tag_id, name, types, query.affinity }]
         if (o.type === 'tag') return { entities: [], tags: parseTags({ results: results.tags ?? results.entities ?? [] }) };
         const list: Json[] = Array.isArray(results.entities) ? results.entities : [];
         return { entities: list.map((r) => parseEntity(r, seeds, false)).filter((e): e is QlooEntity => !!e), tags: [] };

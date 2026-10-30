@@ -1,0 +1,59 @@
+{
+ "success": true,
+ "results": {
+  "tags": [
+   {
+    "tag_id": "urn:tag:genre:music:blues",
+    "name": " blues",
+    "types": [
+     "urn:entity:artist"
+    ],
+    "subtype": "urn:tag:genre:music",
+    "tag_value": "urn:tag:genre:music:blues",
+    "popularity": 0.9,
+    "query": {
+     "affinity": 0.99
+    }
+   },
+   {
+    "tag_id": "urn:tag:genre:music:classic_rock",
+    "name": " classic rock",
+    "types": [
+     "urn:entity:artist"
+    ],
+    "subtype": "urn:tag:genre:music",
+    "tag_value": "urn:tag:genre:music:classic_rock",
+    "popularity": 0.9,
+    "query": {
+     "affinity": 0.98
+    }
+   },
+   {
+    "tag_id": "urn:tag:good_for:qloo:brunch",
+    "name": "Brunch",
+    "types": [
+     "urn:entity:place"
+    ],
+    "subtype": "urn:tag:good_for:qloo",
+    "tag_value": "urn:tag:good_for:qloo:brunch",
+    "popularity": 0.9,
+    "query": {
+     "affinity": 0.94
+    }
+   },
+   {
+    "tag_id": "urn:tag:dup",
+    "name": "Brunch",
+    "types": [
+     "urn:entity:place"
+    ],
+    "subtype": "urn:tag",
+    "tag_value": "urn:tag:dup",
+    "popularity": 0.9,
+    "query": {
+     "affinity": 0.9
+    }
+   }
+  ]
+ }
+}

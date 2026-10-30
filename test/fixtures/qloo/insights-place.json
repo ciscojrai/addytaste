@@ -1,0 +1,203 @@
+{
+ "success": true,
+ "results": {
+  "entities": [
+   {
+    "name": "Fixture Bistro",
+    "entity_id": "FIXTURE-PLACE-1",
+    "type": "urn:entity",
+    "subtype": "urn:entity:place",
+    "popularity": 0.99,
+    "properties": {
+     "address": "1 Fixture St Faketown, ZZ 00000",
+     "phone": "+10000000000",
+     "geocode": {
+      "city": "Faketown",
+      "name": "Midtown",
+      "metro": "Faketown",
+      "country": "United States",
+      "country_code": "US",
+      "admin1_region": "Fixture",
+      "admin2_region": "Fixture County"
+     },
+     "price_level": 3,
+     "business_rating": 4.5,
+     "primary_genre": {
+      "id": "urn:tag:genre:place:restaurant:brunch",
+      "name": "Brunch restaurant",
+      "type": "urn:tag:genre:place",
+      "weight": null
+     },
+     "short_description": "A made-up bistro for tests.",
+     "website": "https://example.invalid",
+     "hours": {
+      "monday": [
+       {
+        "opens": "T09:00:00",
+        "closed": false,
+        "closes": "T17:00:00"
+       }
+      ]
+     }
+    },
+    "location": {
+     "lat": 29.95,
+     "lon": -90.07,
+     "geohash": "fixture"
+    },
+    "tags": [
+     {
+      "id": "urn:tag:place:fixture",
+      "name": "Place",
+      "type": "urn:tag:place",
+      "weight": null
+     },
+     {
+      "id": "urn:tag:ambience:qloo:lively",
+      "name": "Lively",
+      "type": "urn:tag:ambience:qloo",
+      "weight": null
+     },
+     {
+      "id": "urn:tag:good_for:qloo:brunch",
+      "name": "Brunch",
+      "type": "urn:tag:good_for:qloo",
+      "weight": null
+     }
+    ],
+    "references": null,
+    "query": {
+     "affinity": 0.82,
+     "distance": 0,
+     "measurements": {
+      "audience_growth": 0
+     },
+     "explainability": {
+      "signal.interests.entities": [
+       {
+        "entity_id": "FIXTURE-ARTIST-1",
+        "score": 0.4
+       },
+       {
+        "entity_id": "FIXTURE-ARTIST-2",
+        "score": 0.52
+       }
+      ]
+     }
+    },
+    "disambiguation": "1 Fixture St Faketown, ZZ 00000",
+    "external": {
+     "google_place": {
+      "id": "fixture"
+     }
+    }
+   },
+   {
+    "name": "Fixture Cafe",
+    "entity_id": "FIXTURE-PLACE-2",
+    "type": "urn:entity",
+    "subtype": "urn:entity:place",
+    "popularity": 0.99,
+    "properties": {
+     "address": "1 Fixture St Faketown, ZZ 00000",
+     "phone": "+10000000000",
+     "geocode": {
+      "city": "Faketown",
+      "name": "Midtown",
+      "metro": "Faketown",
+      "country": "United States",
+      "country_code": "US",
+      "admin1_region": "Fixture",
+      "admin2_region": "Fixture County"
+     },
+     "price_level": 3,
+     "business_rating": 4.5,
+     "primary_genre": {
+      "id": "urn:tag:genre:place:restaurant:brunch",
+      "name": "Brunch restaurant",
+      "type": "urn:tag:genre:place",
+      "weight": null
+     },
+     "short_description": "A made-up bistro for tests.",
+     "website": "https://example.invalid",
+     "hours": {
+      "monday": [
+       {
+        "opens": "T09:00:00",
+        "closed": false,
+        "closes": "T17:00:00"
+       }
+      ]
+     }
+    },
+    "location": {
+     "lat": 29.96,
+     "lon": -90.07,
+     "geohash": "fixture"
+    },
+    "tags": [
+     {
+      "id": "urn:tag:place:fixture",
+      "name": "Place",
+      "type": "urn:tag:place",
+      "weight": null
+     },
+     {
+      "id": "urn:tag:ambience:qloo:lively",
+      "name": "Lively",
+      "type": "urn:tag:ambience:qloo",
+      "weight": null
+     },
+     {
+      "id": "urn:tag:good_for:qloo:brunch",
+      "name": "Brunch",
+      "type": "urn:tag:good_for:qloo",
+      "weight": null
+     }
+    ],
+    "references": null,
+    "query": {
+     "affinity": 0.82,
+     "distance": 0,
+     "measurements": {
+      "audience_growth": 0
+     },
+     "explainability": {
+      "signal.interests.entities": [
+       {
+        "entity_id": "FIXTURE-ARTIST-1",
+        "score": 0.4
+       },
+       {
+        "entity_id": "FIXTURE-ARTIST-2",
+        "score": 0.52
+       }
+      ]
+     }
+    },
+    "disambiguation": "1 Fixture St Faketown, ZZ 00000",
+    "external": {
+     "google_place": {
+      "id": "fixture"
+     }
+    }
+   }
+  ]
+ },
+ "warnings": [],
+ "query": {
+  "localities": {
+   "filter": [
+    {
+     "entity_id": "FIXTURE-CITY",
+     "name": "Faketown",
+     "subtype": "urn:entity:locality",
+     "location": {
+      "lat": 29.95,
+      "lon": -90.07
+     }
+    }
+   ]
+  }
+ }
+}

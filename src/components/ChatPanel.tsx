@@ -46,6 +46,7 @@ export function ChatPanel({ status, chat, hearts, onHeart, updateChat, createCha
   const fileInput = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const mounted = useRef(false);
+  const tried = useRef(new Set<string>());
 
   const occasion = (chat?.occasion as OccasionId) ?? draft.occasion;
   const group = chat?.group ?? draft.group;
@@ -61,6 +62,7 @@ export function ChatPanel({ status, chat, hearts, onHeart, updateChat, createCha
   };
   useEffect(() => { localStorage.setItem('addytaste.city', city); }, [city]);
 
+  const liveMode = status?.dataSource === 'live';
   const stored = chat ? runFor(chat, occasion) : undefined;
   const sig = chat ? runSig(chat, occasion) : '';
   const hasLikes = !!chat && chat.likes.length > 0;
@@ -96,7 +98,10 @@ export function ChatPanel({ status, chat, hearts, onHeart, updateChat, createCha
     mounted.current = true;
     if (!chat || chat.queue?.length || !chat.likes.length) return;
     // Reopening a chat shows what was saved; a result is only remade after a change.
-    if (stored && (stored.sig === sig || (first && stored.sig === undefined))) { setLoading(false); return; }
+    // A result saved while Qloo was in sample mode is remade once live Qloo is on.
+    const stale = liveMode && stored && stored.result.dataSource !== 'live' && !tried.current.has(`${chat.id}|${occasion}`);
+    if (stored && !stale && (stored.sig === sig || (first && stored.sig === undefined))) { setLoading(false); return; }
+    if (stale) tried.current.add(`${chat.id}|${occasion}`);
     if (!onLikes) {
       abortRef.current?.abort();
       setLoading(false);
@@ -124,7 +129,7 @@ export function ChatPanel({ status, chat, hearts, onHeart, updateChat, createCha
     return () => { clearTimeout(timer); ac.abort(); };
     // sig captures the chips, city, budget and occasion
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat?.id, sig, !!chat?.queue?.length]);
+  }, [chat?.id, sig, !!chat?.queue?.length, liveMode]);
 
   // New chat or new first result: bring the chips and the prediction into view.
   useEffect(() => {
@@ -197,11 +202,12 @@ export function ChatPanel({ status, chat, hearts, onHeart, updateChat, createCha
   });
 
   const result = stored?.result ?? null;
+  // The badge follows the result on screen: live only when every piece of it came from Qloo.
+  const shownSource = result?.dataSource ?? status?.dataSource;
   const pins = result?.pins ?? [];
   const last = chat ? lastTime(chat, occasion) : null;
   const excluded = chat ? priorGifts(chat, occasion) : [];
   const others = chat ? chat.runs.filter((r) => r.occasion !== occasion) : [];
-  const sample = status?.dataSource === 'sample';
   const hasChips = !!chat && chat.likes.length > 0;
   const placeholder = hasChips ? 'Add an update, e.g. "now into hiking"' : 'Paste what they said, or attach a screenshot.';
 
@@ -215,7 +221,7 @@ export function ChatPanel({ status, chat, hearts, onHeart, updateChat, createCha
           </div>
           <div className="head-badges">
             {chat?.sample && <span className="badge"><i />Sample chat</span>}
-            {status && (sample ? <span className="badge sample" role="status"><i />{status.badge}</span> : <span className="badge" role="status"><i />Live Qloo data</span>)}
+            {shownSource && (shownSource === 'live' ? <span className="badge" role="status"><i />Live Qloo data</span> : <span className="badge sample" role="status"><i />{shownSource === 'mixed' ? 'Part sample data (a Qloo call failed)' : status?.badge ?? 'Sample data, not real Qloo'}</span>)}
           </div>
         </div>
         <div className="context">

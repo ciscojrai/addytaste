@@ -8,7 +8,7 @@ function apiPlugin(): Plugin {
     name: 'addytaste-api',
     configureServer(server) {
       const env = loadEnv('development', process.cwd(), '');
-      for (const k of ['GEMINI_API_KEY', 'QLOO_API_KEY', 'QLOO_BASE_URL', 'STAY22_AID', 'GEMINI_MODEL']) if (env[k]) process.env[k] = env[k];
+      for (const k of ['GEMINI_API_KEY', 'QLOO_API_KEY', 'QLOO_BASE_URL', 'STAY22_AID', 'GEMINI_MODEL', 'QLOO_LOG_FILE']) if (env[k]) process.env[k] = env[k];
       server.middlewares.use('/api', async (req, res) => {
         const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c as Buffer);

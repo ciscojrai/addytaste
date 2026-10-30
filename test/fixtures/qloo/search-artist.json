@@ -1,0 +1,64 @@
+{
+ "results": [
+  {
+   "name": "Fixture Artist",
+   "entity_id": "FIXTURE-ARTIST-1",
+   "types": [
+    "urn:entity:artist"
+   ],
+   "properties": {
+    "akas": [],
+    "duration": {},
+    "external": {
+     "spotify": {
+      "id": "fixture"
+     }
+    },
+    "image": {
+     "url": "https://example.invalid/a.jpg"
+    },
+    "short_description": "A made-up artist for tests."
+   },
+   "popularity": 0.99,
+   "disambiguation": "Fixture Artist",
+   "tags": [
+    {
+     "name": "Rock",
+     "tag_id": "urn:tag:genre:rock",
+     "type": "urn:tag:genre",
+     "value": "urn:tag:genre:rock"
+    }
+   ]
+  },
+  {
+   "name": "Second Fixture Artist",
+   "entity_id": "FIXTURE-ARTIST-2",
+   "types": [
+    "urn:entity:artist"
+   ],
+   "properties": {
+    "akas": [],
+    "duration": {},
+    "external": {
+     "spotify": {
+      "id": "fixture"
+     }
+    },
+    "image": {
+     "url": "https://example.invalid/a.jpg"
+    },
+    "short_description": "A made-up artist for tests."
+   },
+   "popularity": 0.99,
+   "disambiguation": "Fixture Artist",
+   "tags": [
+    {
+     "name": "Rock",
+     "tag_id": "urn:tag:genre:rock",
+     "type": "urn:tag:genre",
+     "value": "urn:tag:genre:rock"
+    }
+   ]
+  }
+ ]
+}

@@ -56,7 +56,8 @@ export interface InsightResult {
   city: string;
   budget: { min: number; max: number; label: string } | null;
   workSafe: boolean;
-  dataSource: 'live' | 'sample';
+  /** 'mixed' = live, except for a piece whose Qloo call failed and was replaced by labeled sample data. */
+  dataSource: 'live' | 'sample' | 'mixed';
   inference: { segments: InferenceSegment[]; legend: string[]; writtenBy: string; tags: string[]; viaTagCall: boolean };
   cards: ResultCard[];
   pins: Pin[];

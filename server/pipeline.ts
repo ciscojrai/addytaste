@@ -100,11 +100,19 @@ export async function runUpdate(body: Json, gemini: Gemini): Promise<ChipUpdate>
 }
 
 // ---------- Step 2: insight ----------
-export interface InsightDeps { qloo: QlooClient; gemini: Gemini; stay22Aid: string }
+export interface InsightDeps {
+  qloo: QlooClient;
+  gemini: Gemini;
+  stay22Aid: string;
+  /** Labeled sample data, used for a piece only when its live Qloo call fails. Never shown as real. */
+  sample?: QlooClient;
+}
 
 const uniq = <T,>(a: T[]) => [...new Set(a)];
 const stripSample = (s: string) => (s.startsWith(SAMPLE_PREFIX) ? s.slice(SAMPLE_PREFIX.length) : s);
 const sameName = (a: string, b: string) => norm(stripSample(a)) === norm(stripSample(b));
+/** A search hit counts when its name matches what was said: equal, or one contains the other. */
+const closeName = (said: string, hit: string) => { const a = norm(stripSample(said)); const b = norm(stripSample(hit)); return !!a && !!b && (a === b || b.includes(a) || a.includes(b)); };
 
 export async function runInsight(body: Json, deps: InsightDeps): Promise<InsightResult> {
   const ctx = resolveOccasion(String(body.occasion ?? ''), body.group);
@@ -126,28 +134,43 @@ export async function runInsight(body: Json, deps: InsightDeps): Promise<Insight
   const entityIds: string[] = [];
   const tagIds: string[] = [];
   const seedLike = new Map<string, Taste>();
+  let qlooErrors = 0;
+  const safe = async <T,>(fn: () => Promise<T>): Promise<T | null> => { try { return await fn(); } catch { qlooErrors++; return null; } };
   await Promise.all(
     likes.map(async (like) => {
-      const entityFirst = ENTITY_CATS.has(like.category);
-      const [ent, tag] = await Promise.all([
-        entityFirst ? qloo.search(like.item, like.category).catch(() => null) : Promise.resolve(null),
-        entityFirst ? Promise.resolve(null) : qloo.findTag(like.item).catch(() => null),
-      ]);
-      if (ent) { entityIds.push(ent.id); seedLike.set(ent.id, like); return; }
-      if (tag) { tagIds.push(tag.id); return; }
-      const late = entityFirst ? await qloo.findTag(like.item).catch(() => null) : await qloo.search(like.item, like.category).catch(() => null);
-      if (late && entityFirst) tagIds.push(late.id);
-      else if (late) { entityIds.push(late.id); seedLike.set(late.id, like); }
+      const cat = like.category;
+      const entityCat = ENTITY_CATS.has(cat);
+      let ent = entityCat ? await safe(() => qloo.search(like.item, cat)) : null;
+      // A search hit must look like what they said; "gardening" must not become a shop that happens to have the word in its name.
+      if (ent && !closeName(like.item, ent.name)) ent = null;
+      // Hobbies, foods and generic places are taste tags that apply to places, not entities.
+      const tag = cat === 'place' || !ent ? await safe(() => qloo.findTag(like.item, 'place')) : null;
+      if (cat === 'place' && tag && norm(tag.name) === norm(like.item)) ent = null;
+      if (ent) { entityIds.push(ent.id); seedLike.set(ent.id, like); }
+      else if (tag) tagIds.push(tag.id);
     }),
   );
   const excludeTagIds: string[] = [];
-  await Promise.all(avoids.map(async (a) => { const t = await qloo.findTag(a.item).catch(() => null); if (t) excludeTagIds.push(t.id); }));
-  if (!entityIds.length && !tagIds.length) throw new HttpError(502, 'Qloo could not match any of those likes. Try a different one.');
+  await Promise.all(avoids.map(async (a) => { const t = await safe(() => qloo.findTag(a.item, 'place')); if (t) excludeTagIds.push(t.id); }));
+  if (!entityIds.length && !tagIds.length) {
+    // Qloo itself failed (not just "no match"): redo the whole thing on labeled sample data.
+    if (qlooErrors > 0 && deps.sample && qloo.mode === 'live') return runInsight(body, { ...deps, qloo: deps.sample, sample: undefined });
+    throw new HttpError(502, 'Qloo could not match any of those likes. Try a different one.');
+  }
 
-  // 2. Four insight calls in parallel.
+  // 2. Four insight calls in parallel. If a live call fails, that piece falls back to labeled sample data.
   const base = { entityIds, tagIds, excludeTagIds };
-  const call = (type: InsightType, extra: Partial<Parameters<QlooClient['insights']>[0]> = {}) =>
-    qloo.insights({ type, ...base, ...extra }, ctx.key).catch((e: Error) => ({ entities: [] as QlooEntity[], tags: [] as QlooTag[], error: e.message }));
+  const call = async (type: InsightType, extra: Partial<Parameters<QlooClient['insights']>[0]> = {}) => {
+    const opts = { type, ...base, ...extra };
+    try {
+      return await qloo.insights(opts, ctx.key);
+    } catch (e) {
+      if (deps.sample && qloo.mode === 'live' && type !== 'tag') {
+        try { return await deps.sample.insights(opts, ctx.key); } catch { /* no sample file either */ }
+      }
+      return { entities: [] as QlooEntity[], tags: [] as QlooTag[], error: (e as Error).message };
+    }
+  };
   const [tagRes, placeRes, brandRes, movieRes] = await Promise.all([
     call('tag', { take: 12 }),
     city ? call('place', { city, priceMax: ctx.placePriceMax, take: 12 }) : Promise.resolve({ entities: [] as QlooEntity[], tags: [] as QlooTag[] }),
@@ -252,6 +275,7 @@ export async function runInsight(body: Json, deps: InsightDeps): Promise<Insight
     .slice(0, 6)
     .map((e) => ({ name: e.name, lat: e.lat as number, lon: e.lon as number, primary: !!place && e.name === place.name, sample: e.sample }));
 
+  const dataSource: InsightResult['dataSource'] = cards.length && cards.every((c) => c.sample) ? 'sample' : cards.some((c) => c.sample) ? 'mixed' : cards.length ? 'live' : qloo.mode;
   return {
     runId: String(body.runId ?? ''),
     occasion: ctx.def.id,
@@ -259,8 +283,8 @@ export async function runInsight(body: Json, deps: InsightDeps): Promise<Insight
     city,
     budget: ctx.budget,
     workSafe: ctx.workSafe,
-    dataSource: qloo.mode,
-    inference: { segments: finalSegments, legend: ['Backed by a Qloo tag'], writtenBy: fallback ? 'Template from Qloo tags (Gemini unavailable)' : 'Written by Gemini from Qloo tags', tags, viaTagCall },
+    dataSource,
+    inference: { segments: finalSegments, legend: [dataSource === 'live' ? 'Backed by a Qloo tag' : dataSource === 'mixed' ? 'Backed by a Qloo or sample tag' : 'Backed by a sample tag, not real Qloo'], writtenBy: fallback ? 'Template from Qloo tags (Gemini unavailable)' : 'Written by Gemini from Qloo tags', tags, viaTagCall },
     cards,
     pins,
     filteredOut,

@@ -1,0 +1,34 @@
+{
+ "duration": 12,
+ "success": true,
+ "results": {
+  "tags": [
+   {
+    "parents": [
+     {
+      "type": "urn:entity:place"
+     }
+    ],
+    "type": "urn:tag:dining_options:place",
+    "id": "urn:tag:dining_options:place:brunch",
+    "name": "Brunch",
+    "popularity": 0.9,
+    "properties": {},
+    "tags": []
+   },
+   {
+    "parents": [
+     {
+      "type": "urn:entity:place"
+     }
+    ],
+    "type": "urn:tag:genre:place:restaurant",
+    "id": "urn:tag:genre:place:restaurant:brunch",
+    "name": "Brunch",
+    "popularity": 0.9,
+    "properties": {},
+    "tags": []
+   }
+  ]
+ }
+}

@@ -1,4 +1,5 @@
 // One handler for every /api/* route. Used by the Vite dev server and by the Netlify function wrapper.
+import { appendFileSync } from 'node:fs';
 import { createGemini } from './gemini';
 import { HttpError, runInsight, runRead, runUpdate } from './pipeline';
 import { createQlooClient, SAMPLE_BADGE } from './qloo';
@@ -8,9 +9,21 @@ type Env = Record<string, string | undefined>;
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 
+/** Qloo call log: one line per call to the console, and to QLOO_LOG_FILE when set. The key is scrubbed from every line. */
+export function qlooLogger(env: Env): (line: string) => void {
+  const key = env.QLOO_API_KEY?.trim();
+  return (line) => {
+    const clean = key ? line.split(key).join('[key]') : line;
+    console.log(`[qloo] ${clean}`);
+    if (env.QLOO_LOG_FILE) { try { appendFileSync(env.QLOO_LOG_FILE, clean + '\n'); } catch { /* ignore */ } }
+  };
+}
+
 export async function handleApi(req: Request, env: Env = process.env): Promise<Response> {
   const route = new URL(req.url).pathname.replace(/^\/(\.netlify\/functions\/)?api\/?/, '');
-  const qloo = createQlooClient({ apiKey: env.QLOO_API_KEY, baseUrl: env.QLOO_BASE_URL });
+  const qloo = createQlooClient({ apiKey: env.QLOO_API_KEY, baseUrl: env.QLOO_BASE_URL, log: qlooLogger(env) });
+  // With a key, a failed live call falls back to labeled sample data (when the gitignored .samples folder exists).
+  const sample = qloo.mode === 'live' ? createQlooClient({}) : undefined;
   const gemini = createGemini(env);
   try {
     if (route === 'status' && req.method === 'GET') {
@@ -21,7 +34,7 @@ export async function handleApi(req: Request, env: Env = process.env): Promise<R
     if (!body || typeof body !== 'object') return json(400, { error: 'Send JSON.' });
     if (route === 'read') return json(200, await runRead(body, gemini));
     if (route === 'update') return json(200, await runUpdate(body, gemini));
-    if (route === 'insight') return json(200, await runInsight(body, { qloo, gemini, stay22Aid: env.STAY22_AID || 'newaddy' }));
+    if (route === 'insight') return json(200, await runInsight(body, { qloo, sample, gemini, stay22Aid: env.STAY22_AID || 'newaddy' }));
     return json(404, { error: 'Not found.' });
   } catch (e) {
     if (e instanceof HttpError) return json(e.status, { error: e.message });

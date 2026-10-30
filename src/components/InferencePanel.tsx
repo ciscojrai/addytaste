@@ -8,7 +8,7 @@ export function InferencePanel({ result, loading, error, runKey }: Props) {
   return (
     <section className="card infer" aria-labelledby="inf-h" aria-live="polite">
       <div className={`bar${loading ? ' on' : ''}`} />
-      <h3 id="inf-h"><span className="step">2</span> Predictive inference <span className="info">Grounded by Qloo</span></h3>
+      <h3 id="inf-h"><span className="step">2</span> Predictive inference <span className="info">{result?.dataSource === 'sample' ? 'Sample tags, not real Qloo' : result?.dataSource === 'mixed' ? 'Qloo plus sample tags' : 'Grounded by Qloo'}</span></h3>
       <div className="grounded">Additional tastes inferred from this combination</div>
       {error && !result && <div className="error" role="alert">{error}</div>}
       {!result && !error && <p className="infer-text updating">Reading these tastes together…</p>}
@@ -24,7 +24,7 @@ export function InferencePanel({ result, loading, error, runKey }: Props) {
               return (
                 <Fragment key={si}>
                   {lead && <span className="w" style={{ ['--i' as string]: i }}>{lead}</span>}
-                  {s.tag ? <mark className="hl-phrase" title={`Qloo tag: ${s.tag}`}>{words}</mark> : words}
+                  {s.tag ? <mark className="hl-phrase" title={`Tag: ${s.tag}`}>{words}</mark> : words}
                 </Fragment>
               );
             })}

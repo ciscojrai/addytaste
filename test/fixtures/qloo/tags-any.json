@@ -1,0 +1,21 @@
+{
+ "duration": 12,
+ "success": true,
+ "results": {
+  "tags": [
+   {
+    "parents": [
+     {
+      "type": "urn:entity:book"
+     }
+    ],
+    "type": "urn:tag:genre:media",
+    "id": "urn:tag:genre:media:fixture",
+    "name": "Fixture Genre",
+    "popularity": 0.9,
+    "properties": {},
+    "tags": []
+   }
+  ]
+ }
+}
