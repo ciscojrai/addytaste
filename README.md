@@ -1,52 +1,76 @@
-# AddyTaste (aistudio-newaddy)
+# AddyTaste
 
-A newaddy-style chat for the Qloo Agentic Hackathon. Paste what someone said they like, or attach a screenshot. It reads likes and avoids, lets you toggle each one, and rewrites a live "Predictive inference" paragraph from the tags Qloo returns. Below it sit three picks: a place (with a small map and a Stay22 link), a gift brand and a backup plan. Everything lives in general **chats** (any topic, "+ New chat"). A new chat is named from its first liked items (for example "Gardening, jazz"), else from the occasion ("Birthday ideas"), else "New chat"; it is never named after a relation. Rename any chat with the pencil icon or by double-clicking its name (Enter saves, Esc cancels, an empty name is rejected). Each chat keeps its own likes, avoids, city and White Elephant budget group, and one saved result per occasion (Mother's Day, Birthday, Holidays / Christmas, Anniversary, Date night, Valentine's, Father's Day, White Elephant). Switching or adding an occasion starts with the chat's chips already loaded. A follow-up message (typed, pasted or a screenshot) goes through Gemini, which adds or removes chips (added chips from text still need an exact quote); a note like "Updated Birthday ideas: +gardening" is saved and the current occasion re-runs. Each chat shows a "Last time" line for its other occasions, and those gift brands are left out of the new result (filtered here, and sent to Qloo as `filter.exclude.entities` when the id is known). Storage is versioned (`addytaste.chats.v2`, `addytaste.likes.v2`); v1 threads and likes are migrated and the v1 keys are left in place. When nothing is stored, three clearly marked "Sample ·" chats are seeded (never over real data). Pasted text and screenshots are never saved, only chips, exact quotes, cards and notes. Tap the heart on any place, gift or backup card to save it to the sidebar's Likes tab (linked to the chat by its stable id, so renaming never breaks it; tapping a liked item opens that chat).
+Paste what someone said they like (a text, an email, or a screenshot of a chat) and get a place, a gift brand and a backup plan for the occasion, ranked by Qloo's taste data. Built for the Qloo Agentic Hackathon. Not an official Qloo product; no Qloo logos or assets are used.
 
-Not an official Qloo product. No Qloo logos or assets are used.
+- **Read**: Gemini pulls out likes and avoids. Every text-sourced item must carry an exact quote from what was pasted; invented ones are dropped. You can toggle each chip.
+- **Rank**: Qloo returns places, gift brands and films that fit the combination, plus the taste tags behind it. Gemini writes a short "Predictive inference" paragraph, and a highlight is kept only if its tag is one Qloo returned.
+- **Chats**: any topic, "+ New chat", rename with the pencil or a double-click. Each chat keeps its likes, avoids, city and White Elephant group, and one result per occasion (Mother's Day, Birthday, Holidays / Christmas, Anniversary, Date night, Valentine's, Father's Day, White Elephant at Work $20-30, Friends $25-40, Family $25-50). A new occasion starts with the chips already loaded. A follow-up message adds or removes chips and re-runs the current occasion. Each chat shows a "Last time" line, and earlier gift brands are left out of the new result.
+- **Likes**: a heart on any card saves it to the sidebar's Likes tab, linked to its chat.
+- **Privacy**: pasted text and screenshots are processed in memory and never saved. Browser storage (`addytaste.chats.v2`, `addytaste.likes.v2`) keeps only chips with their quotes, result cards and notes.
+
+## How Qloo is used
+
+All calls are server-side GET requests to `https://hackathon.api.qloo.com` with the key in the `X-Api-Key` header (`server/qloo.ts`).
+
+| Call | Used for |
+| --- | --- |
+| `/search` (`types=urn:entity:artist`, `movie`, `brand`, ...) | Turn a liked artist, film, brand or person into an entity id. A hit must look like what was said. |
+| `/v2/tags` (`filter.parents.types=urn:entity:place`) | Turn a hobby, food or generic place ("gardening", "brunch") into a place tag id; also the avoid tags. |
+| `/v2/insights` `filter.type=urn:entity:place` | The place pick: `signal.interests.entities`, `signal.interests.tags`, `filter.exclude.tags` (+ `operator.filter.exclude.tags=union`), `filter.location.query`, `filter.price_level.max`, `feature.explainability=true`. |
+| `/v2/insights` `filter.type=urn:entity:brand` | The gift brand, with `filter.exclude.entities` set to gift brands already suggested for this chat (real Qloo ids), so a gift does not repeat. |
+| `/v2/insights` `filter.type=urn:entity:movie` | The backup plan (movie night in). |
+| `/v2/insights` `filter.type=urn:tag` | The taste tags behind the Predictive inference panel. |
+
+Qloo's explainability scores decide which liked item a pick is credited to ("Because you like ..."). If a Qloo call fails or times out (25 s), that piece falls back to clearly labeled sample data (`[sample]` names, a Sample tag, and a "Part sample data" or "Sample data, not real Qloo" badge). Sample data is never shown as real. The badge reads "Live Qloo data" only when every pick on screen came from Qloo.
+
+## How Gemini is used
+
+Gemini REST (no SDK, `server/gemini.ts`, temperature 0, JSON-schema output) does three jobs: **read** likes and avoids from pasted text or a screenshot, **update** a chat's chips from a follow-up message, and **compose** the inference paragraph and the copy for the three picks from Qloo's candidates only. Models are raced down a fallback chain; if Gemini is unavailable the app shows a labeled template paragraph built from Qloo tags. Guardrails live in `server/pipeline.ts`: exact-quote check, picks must be Qloo candidates, avoids are filtered here too, Work-safe mode drops bars and alcohol, and a gift price outside the White Elephant budget is never shown.
 
 ## Run it
 
 ```bash
 npm install
-cp .env.example .env     # then add GEMINI_API_KEY (and QLOO_API_KEY when you have it)
-npm run dev              # http://127.0.0.1:5180   (the /demo page is at /demo)
+cp .env.example .env     # then fill in GEMINI_API_KEY and QLOO_API_KEY
+npm run dev              # http://127.0.0.1:5180   (/demo is the how-it-works page)
 npm run typecheck
 npm test
 npm run build
 ```
 
-Keys are read on the server only (`/api/*`). `.env` is gitignored.
+Environment variables (names only; values never go in the repo):
 
-## How it works
+| Name | Purpose |
+| --- | --- |
+| `QLOO_API_KEY` | Qloo hackathon key. Without it the app runs on labeled sample data only. |
+| `GEMINI_API_KEY` | Gemini key for read, update and compose. |
+| `STAY22_AID` | Stay22 affiliate id for the "Stay nearby" links. Defaults to `newaddy`. |
+| `QLOO_BASE_URL` | Optional. Defaults to `https://hackathon.api.qloo.com`. |
+| `GEMINI_MODEL`, `GEMINI_HEDGE_MS`, `GEMINI_TOTAL_MS` | Optional Gemini tuning. |
+| `QLOO_LOG_FILE` | Optional. Appends one line per Qloo call (endpoint, params, status, result count, ms). The key is scrubbed. |
+
+The same handler (`server/api.ts`) serves `/api/*` in the Vite dev server and as a Netlify Function (`netlify/functions/api.mts`, see `netlify.toml`). Set the env vars as site environment variables on Netlify.
+
+## Sample data
+
+With no `QLOO_API_KEY` (or when a live call fails) the server reads fake JSON from a gitignored `.samples/qloo/` folder if present. It is not in this repo, so a deployment without it returns an error instead of sample results when Qloo is down. Three starter chats named "Sample · ..." are seeded in an empty browser.
+
+## Layout
 
 | Piece | Where |
 | --- | --- |
-| Page, chips, inference panel, cards, map | `src/` (React, Vite, Leaflet) |
-| Occasions and budgets (Work $20-30, Friends $25-40, Family $25-50) | `src/lib/occasions.ts` |
+| Page, chat panel, chips, cards, map | `src/` (React, Vite, Leaflet) |
+| Chat model, storage and migration | `src/lib/chats.ts`, `src/lib/likes.ts` |
+| Occasions and budgets | `src/lib/occasions.ts` |
 | Qloo client and exact request shapes | `server/qloo.ts` |
-| Reader and writer (Gemini REST, model fallback chain) | `server/gemini.ts` |
+| Gemini client | `server/gemini.ts` |
 | Read, resolve, rank, filter, compose | `server/pipeline.ts` |
-| One handler for `/api/status`, `/api/read`, `/api/insight` | `server/api.ts` (Vite dev middleware and `netlify/functions/api.mts`) |
+| Tests and Qloo response fixtures (made-up names, real shapes) | `test/` |
 
-Qloo calls (all GET, `X-Api-Key` header, base `https://hackathon.api.qloo.com`):
+## License
 
-- `/search` and `/v2/tags` turn each like into an entity id or a tag id.
-- `/v2/insights` with `filter.type` of `urn:entity:place`, `urn:entity:brand`, `urn:entity:movie` and `urn:tag`, `signal.interests.entities`, `signal.interests.tags`, `filter.exclude.tags` (+ `operator.filter.exclude.tags=union`), `filter.location.query`, `filter.price_level.max`, `feature.explainability=true`.
-
-Guardrails: text quotes must be exact substrings of what was pasted; a highlight in the Predictive inference is kept only if its tag is one Qloo returned; picks must be Qloo candidates; avoids are filtered on our side too; Work-safe mode drops bars and alcohol; a gift price outside the White Elephant budget is never shown.
-
-## Sample data until the Qloo key lands
-
-With no `QLOO_API_KEY` the server reads clearly fake JSON from `.samples/qloo/` and the page shows a "Sample data, Qloo key pending" badge. Sample names start with `[sample]`, every card carries a Sample tag, and sample map pins are placed around the city with a "not real places" caption. `.samples/` is gitignored, so sample data cannot be committed by accident. Put a key in `.env` and the app switches to live data on the next request.
-
-## Privacy
-
-Pasted text and screenshots are processed in memory and never saved. A saved run keeps the chips (item plus quote) and the result, in this browser only. A liked card keeps only the card itself and its chat name.
+MIT. See `LICENSE`.
 
 ## Demo page
 
 `/demo` has a hero, a 3-step explainer, four `<video controls>` slots and a plain "Built on Qloo" section. Drop recordings in `public/clips/` (see the README there).
-
-## Live Qloo
-
-With `QLOO_API_KEY` set in `.env`, every call goes to `https://hackathon.api.qloo.com` (GET, `X-Api-Key` header). Liked names are resolved to entity ids with `/search` (artists, films, brands, people) or to place tags with `/v2/tags?filter.parents.types=urn:entity:place` (hobbies, foods, generic places). `/v2/insights` is then called for `urn:entity:place`, `urn:entity:brand`, `urn:entity:movie` and `urn:tag` (the tags behind the Predictive inference), with `signal.interests.entities` / `signal.interests.tags`, `filter.exclude.tags`, and `filter.exclude.entities` for gifts used in the chat's other occasions. The result badge says "Live Qloo data" only when every pick on screen came from Qloo. If a call fails or times out (25 s), that piece falls back to labeled sample data (`[sample]` names, "Sample" tags, the badge reads "Part sample data" or "Sample data, not real Qloo"); sample data is never shown as real. Set `QLOO_LOG_FILE` to append one line per Qloo call (endpoint, params, status, result count, ms); the key is scrubbed from every line. Test fixtures in `test/fixtures/qloo/` keep the real response shapes but contain made-up names and ids only.

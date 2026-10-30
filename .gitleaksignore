@@ -1,0 +1,2 @@
+# Fake key used only to test log redaction (test/qloo-live.test.ts at commit c25921e). Not a secret.
+c25921ebea47afd2aa28eb4418d174a2eef82f35:test/qloo-live.test.ts:generic-api-key:10

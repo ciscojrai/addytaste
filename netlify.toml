@@ -1,0 +1,18 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# The /demo page is a client-side route of the same app.
+[[redirects]]
+  from = "/demo"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/demo/"
+  to = "/index.html"
+  status = 200

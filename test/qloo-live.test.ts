@@ -7,7 +7,7 @@ import { createQlooClient, parseEntity, parseTags, type Fetcher } from '../serve
 import { like, makeSamplesDir } from './helpers';
 
 const fx = (name: string) => JSON.parse(readFileSync(join(__dirname, 'fixtures', 'qloo', name), 'utf8'));
-const KEY = 'test-key-1234567890';
+const KEY = 'test-key-1234567890'; // gitleaks:allow (fake value for the redaction test)
 
 /** A fake hackathon.api.qloo.com that answers with the captured response shapes and records every request. */
 function fakeQloo(opts: { fail?: (u: URL) => number | 'throw' | undefined } = {}) {
