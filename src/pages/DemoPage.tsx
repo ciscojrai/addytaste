@@ -6,7 +6,7 @@ const CLIPS = [
   { file: '/clips/clip1.mp4', title: 'Paste a chat', note: 'Paste what someone said they like and tap Read tastes. Likes and avoids appear as chips, each with its exact quote.' },
   { file: '/clips/clip2.mp4', title: 'Or drop a screenshot', note: 'Attach a screenshot of a chat or an invite. Gemini reads the image and turns it into the same chips.' },
   { file: '/clips/clip3.mp4', title: 'Turn tastes on and off', note: 'Toggle a chip and the Predictive inference rewrites itself from the tags Qloo returns for that exact mix.' },
-  { file: '/clips/clip4.mp4', title: 'Switch the occasion', note: "Mom's birthday, a summer date, an anniversary or a White Elephant with its budget. The place, the gift brand and the backup plan update." },
+  { file: '/clips/clip4.mp4', title: 'Switch the occasion', note: "A birthday, a date night, an anniversary or a White Elephant with its budget. The chat's likes carry over. The place, the gift brand and the backup plan update." },
 ];
 
 function ClipSlot({ file, title, note }: { file: string; title: string; note: string }) {

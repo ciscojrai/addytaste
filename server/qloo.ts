@@ -36,6 +36,8 @@ export interface InsightsOpts {
   entityIds?: string[];
   tagIds?: string[];
   excludeTagIds?: string[];
+  /** Entities not to return again (earlier gift brands). */
+  excludeEntityIds?: string[];
   city?: string;
   priceMax?: number;
   take?: number;
@@ -50,6 +52,7 @@ export function buildInsightsParams(o: InsightsOpts): Record<string, Param> {
     p['filter.exclude.tags'] = o.excludeTagIds.join(',');
     p['operator.filter.exclude.tags'] = 'union';
   }
+  if (o.excludeEntityIds?.length) p['filter.exclude.entities'] = o.excludeEntityIds.join(',');
   if (o.type === 'place') {
     if (o.city) p['filter.location.query'] = o.city;
     if (o.priceMax) p['filter.price_level.max'] = Math.min(4, Math.max(1, Math.round(o.priceMax)));

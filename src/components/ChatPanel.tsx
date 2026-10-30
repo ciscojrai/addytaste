@@ -1,73 +1,103 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fileToImage, getInsight, readTastes, type Status } from '../lib/api';
-import { BUDGETS, GROUP_LABEL, OCCASIONS, occasionById, resolveOccasion, threadTitle, type Group, type OccasionId } from '../lib/occasions';
-import type { LikedCard } from '../lib/likes';
-import { upsertRun, type SavedRun, type Thread } from '../lib/storage';
-import type { InsightResult, ResultCard, Taste } from '../lib/types';
+import { fileToImage, readTastes, updateChips, type Status } from '../lib/api';
+import {
+  applyChipUpdate, defaultTitle, lastTime, newChat, NEW_CHAT_TITLE, occasionLabel, priorGifts, runFor, runSig, upsertRun,
+  type Chat, type Toggle,
+} from '../lib/chats';
+import { isLiked, type LikedCard } from '../lib/likes';
+import { BUDGETS, exampleFor, GROUP_LABEL, OCCASIONS, occasionById, resolveOccasion, type Group, type OccasionId } from '../lib/occasions';
+import { fetchRun } from '../lib/runner';
+import type { ResultCard } from '../lib/types';
+import { EditableTitle } from './EditableTitle';
 import { ImageIcon, Menu, Send } from './Icons';
 import { InferencePanel } from './InferencePanel';
 import { MiniMap } from './MiniMap';
 import { ResultCards } from './ResultCards';
-import { TasteReview, type Toggle } from './TasteReview';
+import { TasteReview } from './TasteReview';
 
 interface Props {
   status: Status | null;
-  threads: Thread[];
-  setThreads: (fn: (t: Thread[]) => Thread[]) => void;
-  active: Thread | null;
-  onSaved: (title: string) => void;
-  onMenu: () => void;
+  chat: Chat | null;
   hearts: LikedCard[];
-  onHeart: (card: ResultCard, threadTitle: string) => void;
+  onHeart: (card: ResultCard, chat: { id: string; title: string }, occasion: string) => void;
+  updateChat: (id: string, fn: (c: Chat) => Chat) => void;
+  createChat: (c: Chat) => void;
+  onRename: (id: string, name: string) => boolean;
+  onMenu: () => void;
 }
 
-const newRunId = () => `run${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const fmt = (t: number) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+/** Sample chats are prepared once per chat, even if the panel remounts. */
+const preparing = new Set<string>();
 
-export function ChatPanel({ status, setThreads, active, onSaved, onMenu, hearts, onHeart }: Props) {
-  const [occasion, setOccasion] = useState<OccasionId>((active?.occasion as OccasionId) ?? 'mom_birthday');
-  const [group, setGroup] = useState<Group>((active?.group as Group) ?? 'work');
-  const [person, setPerson] = useState(active?.person && active.person !== occasionById(active.occasion)?.person ? active.person : '');
-  const [city, setCity] = useState(() => localStorage.getItem('addytaste.city') ?? '');
+export function ChatPanel({ status, chat, hearts, onHeart, updateChat, createChat, onRename, onMenu }: Props) {
+  const [draft, setDraft] = useState<{ occasion: OccasionId; group: Group; city: string }>({ occasion: 'birthday', group: 'friends', city: localStorage.getItem('addytaste.city') ?? '' });
   const [text, setText] = useState('');
   const [image, setImage] = useState<{ mime: string; data: string; preview: string } | null>(null);
-  const [phase, setPhase] = useState<'idle' | 'reading' | 'ready'>('idle');
-  const [sent, setSent] = useState<{ text: string; preview: string | null } | null>(null);
-  const [likes, setLikes] = useState<Toggle[]>([]);
-  const [avoids, setAvoids] = useState<Toggle[]>([]);
-  const [readText, setReadText] = useState<string | null>(null);
-  const [sourceKind, setSourceKind] = useState<'text' | 'image'>('text');
-  const [dropped, setDropped] = useState(0);
-  const [runId, setRunId] = useState('');
-  const [runAt, setRunAt] = useState(0);
-  const [result, setResult] = useState<InsightResult | null>(null);
+  const [busy, setBusy] = useState<'' | 'reading' | 'updating'>('');
+  const [bubbles, setBubbles] = useState<{ text: string; preview: string | null }[]>([]);
+  const [flash, setFlash] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [runKey, setRunKey] = useState(0);
-  const [savedTitle, setSavedTitle] = useState('');
+  const [prep, setPrep] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const workRef = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const firstCall = useRef(true);
+  const mounted = useRef(false);
 
-  const ctx = useMemo(() => resolveOccasion(occasion, occasion === 'white_elephant' ? group : null)!, [occasion, group]);
-  const def = occasionById(occasion)!;
-  const title = threadTitle(person, ctx);
+  const occasion = (chat?.occasion as OccasionId) ?? draft.occasion;
+  const group = chat?.group ?? draft.group;
+  const city = chat?.city ?? draft.city;
   const isWE = occasion === 'white_elephant';
-  const titleRef = useRef({ title: '', person: '' });
-  titleRef.current = { title, person: person.trim() || def.person };
+  const ctx = useMemo(() => resolveOccasion(occasion, isWE ? group : null), [occasion, group, isWE]);
+  const def = occasionById(occasion) ?? OCCASIONS[1];
+  const title = chat?.title ?? NEW_CHAT_TITLE;
 
+  const patch = (p: Partial<Pick<Chat, 'occasion' | 'group' | 'city'>>) => {
+    if (chat) updateChat(chat.id, (c) => ({ ...c, ...p }));
+    else setDraft((d) => ({ ...d, ...(p as object) }));
+  };
   useEffect(() => { localStorage.setItem('addytaste.city', city); }, [city]);
 
-  const likesKey = likes.filter((l) => l.on).map((l) => l.taste.id).join('|');
-  const avoidsKey = avoids.filter((l) => l.on).map((l) => l.taste.id).join('|');
+  const stored = chat ? runFor(chat, occasion) : undefined;
+  const sig = chat ? runSig(chat, occasion) : '';
+  const hasLikes = !!chat && chat.likes.length > 0;
+  const onLikes = chat?.likes.filter((l) => l.on).length ?? 0;
 
-  // Live inference: re-reads the whole chip set after every change, debounced.
+  // Sample chats: prepare their saved occasions once (the last one is the occasion the chat opens on).
   useEffect(() => {
-    if (phase !== 'ready') return;
-    const onLikes = likes.filter((l) => l.on).map((l) => l.taste);
-    if (!onLikes.length) {
+    if (!chat?.queue?.length || preparing.has(chat.id)) return;
+    preparing.add(chat.id);
+    setPrep(true);
+    const id = chat.id;
+    const queue = [...chat.queue];
+    (async () => {
+      let work = chat;
+      for (const occ of queue) {
+        if (runFor(work, occ)) continue;
+        try {
+          const run = await fetchRun({ ...work, occasion: occ }, occ);
+          work = upsertRun(work, run);
+          updateChat(id, (c) => upsertRun(c, run));
+        } catch { /* a missing sample result is fine; the chat still opens */ }
+      }
+      updateChat(id, (c) => ({ ...c, queue: undefined, occasion: queue[queue.length - 1] }));
+      preparing.delete(id);
+      setPrep(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat?.id, chat?.queue?.length]);
+
+  // Live inference for the current occasion: re-reads the whole chip set after every change, debounced.
+  useEffect(() => {
+    const first = !mounted.current;
+    mounted.current = true;
+    if (!chat || chat.queue?.length || !chat.likes.length) return;
+    // Reopening a chat shows what was saved; a result is only remade after a change.
+    if (stored && (stored.sig === sig || (first && stored.sig === undefined))) { setLoading(false); return; }
+    if (!onLikes) {
       abortRef.current?.abort();
       setLoading(false);
       setError('Turn on at least one like. Qloo ranks by taste fit, so it needs something to start from.');
@@ -78,94 +108,79 @@ export function ChatPanel({ status, setThreads, active, onSaved, onMenu, hearts,
     const ac = new AbortController();
     abortRef.current?.abort();
     abortRef.current = ac;
-    const wait = firstCall.current ? 0 : 400;
-    firstCall.current = false;
     const timer = setTimeout(async () => {
       try {
-        const r = await getInsight(
-          { occasion, group: isWE ? group : null, city: city.trim(), text: readText, likes: onLikes, avoids: avoids.filter((a) => a.on).map((a) => a.taste), runId },
-          ac.signal,
-        );
+        const run = await fetchRun(chat, occasion, ac.signal);
         if (ac.signal.aborted) return;
-        setResult(r);
+        updateChat(chat.id, (c) => upsertRun(c, run));
         setRunKey((k) => k + 1);
         setLoading(false);
-        const run: SavedRun = { runId, at: runAt, occasion, group: isWE ? group : null, city: city.trim(), sourceKind, likes, avoids, result: r };
-        const tt = titleRef.current;
-        setThreads((t) => upsertRun(t, { title: tt.title, person: tt.person, occasion, group: isWE ? group : null }, run));
-        setSavedTitle(tt.title);
-        onSaved(tt.title);
       } catch (e) {
         if (ac.signal.aborted) return;
         setLoading(false);
         setError((e as Error).message);
       }
-    }, wait);
+    }, stored ? 400 : 0);
     return () => { clearTimeout(timer); ac.abort(); };
-    // likes/avoids arrays are represented by likesKey/avoidsKey (their "on" ids)
+    // sig captures the chips, city, budget and occasion
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, likesKey, avoidsKey, occasion, group, city, runId]);
+  }, [chat?.id, sig, !!chat?.queue?.length]);
 
-  // New read: bring the chips and the prediction into view (top of the workspace), not the bottom of the page.
+  // New chat or new first result: bring the chips and the prediction into view.
   useEffect(() => {
     const box = scroller.current;
-    if (!box) return;
-    if (phase === 'ready' && workRef.current) box.scrollTo({ top: Math.max(0, workRef.current.offsetTop - 12), behavior: 'smooth' });
-    else if (phase === 'reading') box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
-  }, [phase, runId]);
+    if (!box || !workRef.current) return;
+    box.scrollTo({ top: Math.max(0, workRef.current.offsetTop - 12), behavior: 'smooth' });
+  }, [chat?.id, occasion, hasLikes]);
+
+  const clearComposer = () => { setText(''); setImage(null); };
 
   const submit = useCallback(async () => {
-    if (phase === 'reading') return;
+    if (busy) return;
     const t = text.trim();
-    if (!t && !image) { setError('Paste some text or attach a screenshot first.'); return; }
+    if (!t && !image) { setError('Paste or type something, or attach a screenshot.'); return; }
+    if (!ctx) { setError('Pick who the White Elephant is with first.'); return; }
     setError('');
+    setFlash('');
     abortRef.current?.abort();
-    setPhase('reading');
-    setResult(null);
-    setSent({ text: t, preview: image?.preview ?? null });
+    const sent = { text: t, preview: image?.preview ?? null };
+    const img = image ? { mime: image.mime, data: image.data } : undefined;
     try {
-      const r = await readTastes({ occasion, group: isWE ? group : null, ...(image ? { image: { mime: image.mime, data: image.data } } : { text: t }) });
-      if (!r.likes.length) throw new Error('I could not find anything they like in that. Try more text or a clearer screenshot.');
-      setLikes(r.likes.map((x) => ({ taste: x, on: true })));
-      setAvoids(r.avoids.map((x) => ({ taste: x, on: true })));
-      setReadText(image ? null : t);
-      setSourceKind(r.sourceKind);
-      setDropped(r.dropped);
-      firstCall.current = true;
-      setRunAt(Date.now());
-      setRunId(newRunId());
-      setText('');
-      setImage(null);
-      setPhase('ready');
+      if (!chat || !chat.likes.length) {
+        // First message: read the tastes and create the chat.
+        setBusy('reading');
+        setBubbles((b) => [...b, sent]);
+        const r = await readTastes({ occasion, group: isWE ? group : null, ...(img ? { image: img } : { text: t }) });
+        if (!r.likes.length) throw new Error('I could not find anything they like in that. Try more text or a clearer screenshot.');
+        const likes: Toggle[] = r.likes.map((x) => ({ taste: x, on: true }));
+        const avoids: Toggle[] = r.avoids.map((x) => ({ taste: x, on: true }));
+        const base = { city: city.trim(), group, occasion, likes, avoids };
+        if (chat) updateChat(chat.id, (c) => ({ ...c, ...base, title: c.titleAuto ? defaultTitle(r.likes, occasion) : c.title }));
+        else createChat(newChat({ ...base, title: defaultTitle(r.likes, occasion) }));
+      } else {
+        // Follow-up: Gemini adds or removes chips on this chat, then the current occasion is re-run.
+        setBusy('updating');
+        setBubbles((b) => [...b, sent]);
+        const u = await updateChips({ ...(img ? { image: img } : { text: t }), likes: chat.likes.map((x) => x.taste.item), avoids: chat.avoids.map((x) => x.taste.item) });
+        const merged = applyChipUpdate(chat, u);
+        if (!merged.note) setFlash(`No chip changes in that message for ${chat.title}.`);
+        else {
+          const note = { at: Date.now(), text: merged.note };
+          updateChat(chat.id, (c) => ({ ...c, likes: merged.likes, avoids: merged.avoids, notes: [note, ...c.notes].slice(0, 20), updatedAt: note.at }));
+        }
+      }
+      clearComposer();
     } catch (e) {
-      setPhase('idle');
-      setSent(null);
       setError((e as Error).message);
+    } finally {
+      setBusy('');
     }
-  }, [phase, text, image, occasion, group, isWE]);
-
-  const reopen = (run: SavedRun) => {
-    abortRef.current?.abort();
-    const asText = run.sourceKind === 'text' ? [...run.likes, ...run.avoids].map((x) => x.taste.quote).join('\n') : null;
-    setOccasion(run.occasion as OccasionId);
-    if (run.group) setGroup(run.group as Group);
-    setCity(run.city);
-    setLikes(run.likes);
-    setAvoids(run.avoids);
-    setReadText(asText);
-    setSourceKind(run.sourceKind);
-    setDropped(0);
-    setSent(null);
-    firstCall.current = true;
-    setRunAt(run.at);
-    setRunId(run.runId);
-    setResult(run.result);
-    setPhase('ready');
-  };
+  }, [busy, text, image, ctx, chat, occasion, group, isWE, city, updateChat, createChat]);
 
   const toggle = (kind: 'like' | 'avoid', id: string) => {
+    if (!chat) return;
     const f = (list: Toggle[]) => list.map((x) => (x.taste.id === id ? { ...x, on: !x.on } : x));
-    if (kind === 'like') setLikes(f); else setAvoids(f);
+    updateChat(chat.id, (c) => (kind === 'like' ? { ...c, likes: f(c.likes) } : { ...c, avoids: f(c.avoids) }));
   };
 
   const onFile = async (f: File | undefined) => {
@@ -176,26 +191,38 @@ export function ChatPanel({ status, setThreads, active, onSaved, onMenu, hearts,
     if (fileInput.current) fileInput.current.value = '';
   };
 
-  const past = (active?.runs ?? []).filter((r) => r.runId !== runId);
-  const showWelcome = phase === 'idle' && !past.length;
-  const sample = status?.dataSource === 'sample';
+  const heart = (occ: string) => ({
+    likedFor: (c: ResultCard) => !!chat && isLiked(hearts, chat.id, occ, c),
+    onHeart: chat ? (c: ResultCard) => onHeart(c, { id: chat.id, title: chat.title }, occ) : undefined,
+  });
+
+  const result = stored?.result ?? null;
   const pins = result?.pins ?? [];
+  const last = chat ? lastTime(chat, occasion) : null;
+  const excluded = chat ? priorGifts(chat, occasion) : [];
+  const others = chat ? chat.runs.filter((r) => r.occasion !== occasion) : [];
+  const sample = status?.dataSource === 'sample';
+  const hasChips = !!chat && chat.likes.length > 0;
+  const placeholder = hasChips ? 'Add an update, e.g. "now into hiking"' : 'Paste what they said, or attach a screenshot.';
 
   return (
     <main className="glass panel" aria-label="Chat">
       <header className="panel-head">
         <div className="head-row">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <div className="head-left">
             <button className="icon-btn menu-btn" type="button" onClick={onMenu} aria-label="Open chats"><Menu /></button>
-            <h1>{phase === 'idle' && active ? active.title : title}</h1>
+            {chat ? <EditableTitle value={title} onSave={(n) => onRename(chat.id, n)} /> : <EditableTitle value={title} onSave={() => false} readOnly />}
           </div>
-          {status && (sample ? <span className="badge sample" role="status"><i />{status.badge}</span> : <span className="badge" role="status"><i />Live Qloo data</span>)}
+          <div className="head-badges">
+            {chat?.sample && <span className="badge"><i />Sample chat</span>}
+            {status && (sample ? <span className="badge sample" role="status"><i />{status.badge}</span> : <span className="badge" role="status"><i />Live Qloo data</span>)}
+          </div>
         </div>
         <div className="context">
           <label className="field wide">
             <span>Occasion</span>
-            <select className="ctl" value={occasion} onChange={(e) => setOccasion(e.target.value as OccasionId)} aria-label="Occasion">
-              {OCCASIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            <select className="ctl" value={occasion} onChange={(e) => patch({ occasion: e.target.value as OccasionId })} aria-label="Occasion">
+              {OCCASIONS.map((o) => <option key={o.id} value={o.id}>{o.label}{chat && runFor(chat, o.id) ? ' (saved)' : ''}</option>)}
             </select>
           </label>
           {isWE && (
@@ -203,49 +230,71 @@ export function ChatPanel({ status, setThreads, active, onSaved, onMenu, hearts,
               <span>Swap with</span>
               <div className="seg" role="radiogroup" aria-label="White Elephant group">
                 {(Object.keys(BUDGETS) as Group[]).map((g) => (
-                  <button key={g} type="button" role="radio" aria-checked={group === g} onClick={() => setGroup(g)}>{GROUP_LABEL[g]}</button>
+                  <button key={g} type="button" role="radio" aria-checked={group === g} onClick={() => patch({ group: g })}>{GROUP_LABEL[g]}</button>
                 ))}
               </div>
             </div>
           )}
-          {isWE && ctx.budget && <div className="budget-note">Budget {ctx.budget.label}</div>}
-          <label className="field">
-            <span>Who is it for</span>
-            <input className="ctl" value={person} onChange={(e) => setPerson(e.target.value)} placeholder={def.person} maxLength={30} aria-label="Who is it for" />
-          </label>
+          {isWE && ctx?.budget && <div className="budget-note">Budget {ctx.budget.label}</div>}
           <label className="field">
             <span>City</span>
-            <input className="ctl" value={city} onChange={(e) => setCity(e.target.value)} placeholder="New Orleans" maxLength={60} aria-label="City" />
+            <input className="ctl" value={city} onChange={(e) => patch({ city: e.target.value })} placeholder="New Orleans" maxLength={60} aria-label="City" />
           </label>
         </div>
       </header>
 
       <div className="scroll" ref={scroller}>
-        {past.map((r) => <PastRun key={r.runId} run={r} chatTitle={active?.title ?? title} hearts={hearts} onHeart={onHeart} onReopen={() => reopen(r)} />)}
-
-        {showWelcome && (
+        {!chat && !bubbles.length && (
           <div className="welcome">
             <h2>Paste what they said they like. Get a place, a gift and a backup plan.</h2>
-            <p>Drop in a text, an email or a screenshot of a chat. I will pull out what they like and what to avoid, then you can switch each one on or off and watch the prediction change.</p>
-            <button className="btn" type="button" onClick={() => { setText(def.example); if (!city.trim()) setCity(def.exampleCity); }}>Try an example for {def.label}</button>
+            <p>Drop in a text, an email or a screenshot of a chat. I will pull out what they like and what to avoid. Each chat remembers its likes, so a new occasion starts with them already loaded.</p>
+            <button className="btn" type="button" onClick={() => { setText(exampleFor(occasion)); if (!city.trim()) patch({ city: 'New Orleans' }); }}>Try an example for {def.label}</button>
           </div>
         )}
 
-        {sent && (
-          <div className="bubble-user">
-            {sent.preview && <img src={sent.preview} alt="Screenshot you attached" />}
-            {sent.text ? sent.text : sent.preview ? 'Screenshot' : ''}
-          </div>
-        )}
-        {phase === 'reading' && <p className="note" role="status">Reading what they like…</p>}
+        {chat && chat.notes.slice(0, 3).map((n) => <p key={n.at} className="chat-note"><span>{n.text}</span><time>{fmt(n.at)}</time></p>)}
 
-        {phase === 'ready' && (
+        {others.map((r) => {
+          const gift = r.result.cards.find((c) => c.kind === 'gift')?.name.replace(/^\[sample\] /, '');
+          const place = r.result.cards.find((c) => c.kind === 'place')?.name.replace(/^\[sample\] /, '');
+          return (
+            <details key={r.runId} className="past-occ">
+              <summary>
+                <span className="po-title">{occasionLabel(r.occasion)}</span>
+                <span className="note">{fmt(r.at)}{gift ? ` · gift ${gift}` : ''}{place ? ` · ${place}` : ''}</span>
+              </summary>
+              <div className="past-body">
+                <button className="btn small" type="button" onClick={() => patch({ occasion: r.occasion as OccasionId })}>Open {occasionLabel(r.occasion)}</button>
+                <ResultCards result={r.result} {...heart(r.occasion)} />
+              </div>
+            </details>
+          );
+        })}
+
+        {bubbles.map((b, i) => (
+          <div className="bubble-user" key={i}>
+            {b.preview && <img src={b.preview} alt="Screenshot you attached" />}
+            {b.text ? b.text : b.preview ? 'Screenshot' : ''}
+          </div>
+        ))}
+        {busy === 'reading' && <p className="note" role="status">Reading what they like…</p>}
+        {busy === 'updating' && <p className="note" role="status">Updating the chips…</p>}
+        {prep && <p className="note" role="status">Preparing the sample results…</p>}
+        {flash && <p className="chat-note" role="status"><span>{flash}</span></p>}
+
+        {hasChips && chat && (
           <>
             <div className="work" ref={workRef}>
-              <TasteReview likes={likes} avoids={avoids} sourceKind={sourceKind} dropped={dropped} onToggle={toggle} />
-              <InferencePanel result={result} loading={loading} error={error} runKey={runKey} />
+              <TasteReview likes={chat.likes} avoids={chat.avoids} sourceKind={chat.likes.some((l) => l.taste.source === 'image') ? 'image' : 'text'} dropped={0} onToggle={toggle} />
+              <InferencePanel result={result} loading={loading || prep} error={error} runKey={runKey} />
             </div>
-            {result && <ResultCards result={result} threadTitle={savedTitle || title} hearts={hearts} onHeart={onHeart} />}
+            {last && (
+              <p className="last-time">
+                <b>Last time:</b> {occasionLabel(last.occasion)} ({fmt(last.at)}){last.gift ? `, gift ${last.gift}` : ''}{last.place ? `, place ${last.place}` : ''}.
+                {excluded.length > 0 && ' Earlier gifts are left out here.'}
+              </p>
+            )}
+            {result && <ResultCards result={result} {...heart(occasion)} />}
             {pins.length > 0 && (
               <section className="card mapbox" aria-label="Map">
                 <header>
@@ -255,15 +304,15 @@ export function ChatPanel({ status, setThreads, active, onSaved, onMenu, hearts,
                 <MiniMap pins={pins} />
               </section>
             )}
-            {savedTitle && result && <p className="saved">Saved to the chat “{savedTitle}” in this browser.</p>}
+            {result && <p className="saved">Saved to “{title}” in this browser.</p>}
           </>
         )}
-        {error && phase !== 'ready' && <div className="error" role="alert">{error}</div>}
+        {error && !hasChips && <div className="error" role="alert">{error}</div>}
       </div>
 
       <form className="composer" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         {image && (
-          <div className="thumb"><img src={image.preview} alt="Screenshot to read" /><span>Screenshot ready to read.</span><button type="button" onClick={() => setImage(null)}>Remove</button></div>
+          <div className="thumb"><img src={image.preview} alt="Screenshot to read" /><span>Screenshot ready.</span><button type="button" onClick={() => setImage(null)}>Remove</button></div>
         )}
         <div className="composer-box">
           <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => void onFile(e.target.files?.[0])} />
@@ -272,37 +321,16 @@ export function ChatPanel({ status, setThreads, active, onSaved, onMenu, hearts,
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void submit(); } }}
-            placeholder={def.placeholder}
-            aria-label="Paste what they said"
+            placeholder={placeholder}
+            aria-label={hasChips ? 'Add an update' : 'Paste what they said'}
             rows={2}
             maxLength={4000}
           />
-          <button type="submit" className="btn primary" aria-label="Read tastes" disabled={phase === 'reading' || (!text.trim() && !image)}>
-            <span className="lbl">Read tastes</span> <Send />
+          <button type="submit" className="btn primary" aria-label={hasChips ? 'Send update' : 'Read tastes'} disabled={!!busy || (!text.trim() && !image)}>
+            <span className="lbl">{hasChips ? 'Update' : 'Read tastes'}</span> <Send />
           </button>
         </div>
       </form>
     </main>
-  );
-}
-
-function PastRun({ run, chatTitle, hearts, onHeart, onReopen }: { run: SavedRun; chatTitle: string; hearts: LikedCard[]; onHeart: (card: ResultCard, threadTitle: string) => void; onReopen: () => void }) {
-  const def = occasionById(run.occasion);
-  const taste = (l: { taste: Taste; on: boolean }[]) => l.filter((x) => x.on).map((x) => x.taste.item).join(', ');
-  return (
-    <section className="past" aria-label={`Saved result from ${fmt(run.at)}`}>
-      <div className="past-head">
-        <span className="note"><b>{def?.label ?? run.occasion}</b> · {fmt(run.at)}{run.city ? ` · ${run.city}` : ''}</span>
-        <button className="btn small" type="button" onClick={onReopen}>Reopen chips</button>
-      </div>
-      <div className="bubble-user">Likes: {taste(run.likes) || 'none'}{taste(run.avoids) ? `. Avoids: ${taste(run.avoids)}` : ''}</div>
-      <section className="card">
-        <p className="infer-text" style={{ minHeight: 0 }}>
-          {run.result.inference.segments.map((s, i) => (s.tag ? <mark key={i} className="hl-phrase">{s.text}</mark> : <span key={i}>{s.text}</span>))}
-        </p>
-        <div className="by">{run.result.inference.writtenBy}</div>
-      </section>
-      <ResultCards result={run.result} threadTitle={chatTitle} hearts={hearts} onHeart={onHeart} />
-    </section>
   );
 }

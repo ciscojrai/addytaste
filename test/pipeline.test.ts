@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { handleApi } from '../server/api';
 import { createQlooClient, type Fetcher } from '../server/qloo';
 import { filterByAvoids, isWorkSafeEntity } from '../server/filter';
-import { HttpError, joinPieces, pricesWithin, runInsight, runRead, templateSegments, validSegments } from '../server/pipeline';
+import { HttpError, joinPieces, pricesWithin, runInsight, runRead, runUpdate, templateSegments, validSegments } from '../server/pipeline';
 import { findExactQuote, validateTastes } from '../server/quotes';
-import { resolveOccasion, threadTitle } from '../src/lib/occasions';
+import { resolveOccasion } from '../src/lib/occasions';
 import { stay22Link } from '../src/lib/stay22';
 import { like, makeSamplesDir } from './helpers';
 
@@ -17,7 +17,7 @@ const gemini = (compose?: unknown): Gem => ({
 });
 const TEXT = 'I like Frank Ocean and gardening. Not into country music.';
 const body = (extra: Record<string, unknown> = {}) => ({
-  occasion: 'summer_date',
+  occasion: 'date_night',
   city: 'Chicago',
   text: TEXT,
   likes: [like('Frank Ocean', 'artist', 'I like Frank Ocean'), like('gardening', 'activity', 'gardening')],
@@ -128,16 +128,16 @@ describe('reader, quotes, filters, occasions', () => {
   });
 
   it('runRead validates Gemini quotes for text and marks screenshot reads as image', async () => {
-    const t = await runRead({ occasion: 'mom_birthday', text: TEXT }, gemini());
+    const t = await runRead({ occasion: 'birthday', text: TEXT }, gemini());
     expect(t.sourceKind).toBe('text');
     expect(t.likes.map((l) => l.item)).toEqual(['Frank Ocean']);
     expect(t.avoids.map((l) => l.item)).toEqual(['country music']);
     expect(t.dropped).toBe(1);
-    const img = await runRead({ occasion: 'mom_birthday', image: { mime: 'image/png', data: 'AAAA' } }, gemini());
+    const img = await runRead({ occasion: 'birthday', image: { mime: 'image/png', data: 'AAAA' } }, gemini());
     expect(img.sourceKind).toBe('image');
     expect(img.likes.every((l) => l.source === 'image')).toBe(true);
-    await expect(runRead({ occasion: 'mom_birthday', image: { mime: 'application/pdf', data: 'AAAA' } }, gemini())).rejects.toThrow(/PNG/);
-    await expect(runRead({ occasion: 'mom_birthday', text: '' }, gemini())).rejects.toThrow(/Paste/);
+    await expect(runRead({ occasion: 'birthday', image: { mime: 'application/pdf', data: 'AAAA' } }, gemini())).rejects.toThrow(/PNG/);
+    await expect(runRead({ occasion: 'birthday', text: '' }, gemini())).rejects.toThrow(/Paste/);
   });
 
   it('avoid filter matches the thing, not every word', () => {
@@ -152,15 +152,13 @@ describe('reader, quotes, filters, occasions', () => {
     expect(isWorkSafeEntity({ name: 'Corner Espresso Bar', tags: ['coffee'] })).toBe(true);
   });
 
-  it('White Elephant budgets and thread titles', () => {
+  it('White Elephant budgets and the new occasions', () => {
     expect(resolveOccasion('white_elephant', 'work')?.budget).toMatchObject({ min: 20, max: 30 });
     expect(resolveOccasion('white_elephant', 'friends')?.budget).toMatchObject({ min: 25, max: 40 });
     expect(resolveOccasion('white_elephant', 'family')?.budget).toMatchObject({ min: 25, max: 50 });
     expect(resolveOccasion('white_elephant')).toBeNull();
-    expect(resolveOccasion('mom_birthday')?.budget).toBeNull();
-    const ctx = resolveOccasion('mom_birthday');
-    expect(threadTitle('Mom', ctx!)).toBe('Mom, birthday');
-    expect(threadTitle('', resolveOccasion('white_elephant', 'work')!)).toBe('Swap, white elephant (Work)');
+    for (const id of ['mothers_day', 'birthday', 'holidays', 'anniversary', 'date_night', 'valentines', 'fathers_day']) expect(resolveOccasion(id)?.budget).toBeNull();
+    expect(resolveOccasion('summer_date')).toBeNull();
   });
 
   it('Stay22 link is the plain Allez deep link', () => {
@@ -215,5 +213,70 @@ describe('budget guard and paragraph joining', () => {
   it('joinPieces adds one space between pieces, none before punctuation', () => {
     const out = joinPieces([{ text: 'They like' }, { text: 'live jazz', tag: 'live jazz' }, { text: '.' }]);
     expect(out.map((p) => p.text).join('')).toBe('They like live jazz.');
+  });
+});
+
+
+describe('follow-up chip updates (Gemini mocked)', () => {
+  const upd = (raw: unknown): Gem => ({ available: true, update: async () => raw });
+  const base = { likes: ['Frank Ocean', 'jazz'], avoids: ['country music'] };
+
+  it('adds chips only with an exact quote from the follow-up, removes existing chips by name', async () => {
+    const text = 'Update: she got into gardening, and she is over jazz now.';
+    const g = upd({
+      addLikes: [{ item: 'gardening', category: 'activity', quote: 'she got into gardening' }, { item: 'sailing', category: 'activity', quote: 'she loves sailing' }],
+      addAvoids: [],
+      removeLikes: ['Jazz', 'not a chip'],
+      removeAvoids: [],
+    });
+    const u = await runUpdate({ text, ...base }, g);
+    expect(u.addLikes.map((t) => t.item)).toEqual(['gardening']);
+    expect(u.addLikes[0].quote).toBe('she got into gardening');
+    expect(u.removeLikes).toEqual(['jazz']);
+    expect(u.dropped).toBe(2);
+    expect(u.sourceKind).toBe('text');
+  });
+
+  it('does not add a chip that is already there, and a new avoid replaces the same like', async () => {
+    const text = 'Frank Ocean again. No more jazz, I think.';
+    const g = upd({
+      addLikes: [{ item: 'Frank Ocean', category: 'artist', quote: 'Frank Ocean again' }],
+      addAvoids: [{ item: 'jazz', category: 'other', quote: 'No more jazz' }],
+      removeLikes: [],
+      removeAvoids: [],
+    });
+    const u = await runUpdate({ text, ...base }, g);
+    expect(u.addLikes).toEqual([]);
+    expect(u.addAvoids.map((t) => t.item)).toEqual(['jazz']);
+    expect(u.removeLikes).toEqual(['jazz']);
+  });
+
+  it('rejects an empty update and a missing key', async () => {
+    await expect(runUpdate({ text: '  ', ...base }, upd({}))).rejects.toThrow(/update/i);
+    await expect(runUpdate({ text: 'hi', ...base }, { available: false } as Gem)).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+describe('last-time exclusions in the pipeline', () => {
+  it('filters out gifts used before by name, and sends their Qloo ids as filter.exclude.entities', async () => {
+    const qloo = createQlooClient({ samplesDir: makeSamplesDir() });
+    const r = await runInsight(body({ exclude: [{ name: 'Garden Goods' }, { name: 'Other', id: 'X-9' }] }), { qloo, gemini: gemini(), stay22Aid: 'x' });
+    const gift = r.cards.find((c) => c.kind === 'gift');
+    expect(gift?.name).not.toMatch(/Garden Goods/);
+    expect(r.filteredOut.some((f) => f.name.includes('Garden Goods'))).toBe(true);
+
+    const urls: string[] = [];
+    const fetchImpl: Fetcher = async (url) => {
+      urls.push(url);
+      const u = new URL(url);
+      let payload: unknown = {};
+      if (u.pathname === '/search') payload = { results: [{ entity_id: 'E-' + u.searchParams.get('query'), name: u.searchParams.get('query') }] };
+      else if (u.pathname === '/v2/tags') payload = { results: { tags: [{ id: 'urn:tag:' + u.searchParams.get('filter.query'), name: u.searchParams.get('filter.query') }] } };
+      else payload = { results: { entities: [{ entity_id: 'B1', name: 'Brand One', tags: [{ name: 'a' }] }] } };
+      return { ok: true, status: 200, json: async () => payload };
+    };
+    await runInsight(body({ exclude: [{ name: 'Old Gift', id: 'OLD1' }, { name: 'Older', id: 'OLD2' }] }), { qloo: createQlooClient({ apiKey: 'k', fetchImpl }), gemini: gemini(), stay22Aid: 'x' });
+    const brandCall = urls.find((u) => u.includes('filter.type=urn:entity:brand')) as string;
+    expect(brandCall).toContain('filter.exclude.entities=OLD1,OLD2');
   });
 });

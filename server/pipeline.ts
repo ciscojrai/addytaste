@@ -1,6 +1,6 @@
 // The two steps behind the page: read (Gemini reads text or a screenshot) and insight (Qloo + Gemini).
 import type { Category, InferenceSegment, InsightResult, Pin, ReadResult, ResultCard, Taste } from '../src/lib/types';
-import { resolveOccasion, type OccasionContext } from '../src/lib/occasions';
+import { readerHint, resolveOccasion, type OccasionContext } from '../src/lib/occasions';
 import { stay22Link } from '../src/lib/stay22';
 import { filterByAvoids, isWorkSafeEntity, norm } from './filter';
 import { SAMPLE_PREFIX, type InsightType, type QlooClient, type QlooEntity, type QlooTag } from './qloo';
@@ -33,13 +33,13 @@ export async function runRead(body: Json, gemini: Gemini): Promise<ReadResult> {
   if (image?.data) {
     if (!IMAGE_MIME.has(String(image.mime))) throw new HttpError(400, 'Attach a PNG, JPEG or WebP screenshot.');
     if (image.data.length > MAX_IMAGE_B64) throw new HttpError(413, 'That image is too large. Try a smaller screenshot.');
-    raw = await gemini.read({ image: { mime: String(image.mime), data: image.data }, hint: ctx.def.readerHint }).catch(failRead);
+    raw = await gemini.read({ image: { mime: String(image.mime), data: image.data }, hint: readerHint(ctx.def.label) }).catch(failRead);
     const likes = validateTastes(null, raw.likes);
     const avoids = validateTastes(null, raw.avoids);
     return finishRead(likes, avoids, 'image');
   }
   if (!text) throw new HttpError(400, 'Paste some text or attach a screenshot.');
-  raw = await gemini.read({ text, hint: ctx.def.readerHint }).catch(failRead);
+  raw = await gemini.read({ text, hint: readerHint(ctx.def.label) }).catch(failRead);
   return finishRead(validateTastes(text, raw.likes), validateTastes(text, raw.avoids), 'text');
 }
 function failRead(): never { throw new HttpError(502, 'The reader is busy right now. Try again in a moment.'); }
@@ -48,6 +48,55 @@ function finishRead(likes: { kept: Taste[]; dropped: number }, avoids: { kept: T
   const avoidKeys = new Set(avoids.kept.map((a) => norm(a.item)));
   const keptLikes = likes.kept.filter((l) => !avoidKeys.has(norm(l.item)));
   return { likes: keptLikes.slice(0, 12), avoids: avoids.kept.slice(0, 8), dropped: likes.dropped + avoids.dropped + (likes.kept.length - keptLikes.length), sourceKind };
+}
+
+// ---------- Follow-up: add or remove chips on an existing person ----------
+export interface ChipUpdate { addLikes: Taste[]; addAvoids: Taste[]; removeLikes: string[]; removeAvoids: string[]; dropped: number; sourceKind: 'text' | 'image' }
+
+export async function runUpdate(body: Json, gemini: Gemini): Promise<ChipUpdate> {
+  if (!gemini.available) throw new HttpError(503, 'Gemini key is missing on the server.');
+  const strs = (v: unknown, max: number) => (Array.isArray(v) ? v : []).filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim().slice(0, 80)).slice(0, max);
+  const curLikes = strs(body.likes, 20);
+  const curAvoids = strs(body.avoids, 20);
+  const text = cleanText(body.text);
+  const image = body.image as { mime?: string; data?: string } | undefined;
+  let raw: Json;
+  let source: string | null;
+  if (image?.data) {
+    if (!IMAGE_MIME.has(String(image.mime))) throw new HttpError(400, 'Attach a PNG, JPEG or WebP screenshot.');
+    if (image.data.length > MAX_IMAGE_B64) throw new HttpError(413, 'That image is too large. Try a smaller screenshot.');
+    raw = await gemini.update({ image: { mime: String(image.mime), data: image.data }, likes: curLikes, avoids: curAvoids }).catch(failRead);
+    source = null;
+  } else {
+    if (!text) throw new HttpError(400, 'Type or paste an update first.');
+    raw = await gemini.update({ text, likes: curLikes, avoids: curAvoids }).catch(failRead);
+    source = text;
+  }
+  const exact = (list: string[], wanted: unknown) => {
+    const k = norm(wanted);
+    return k ? list.find((x) => norm(x) === k) : undefined;
+  };
+  const addL = validateTastes(source, raw.addLikes);
+  const addA = validateTastes(source, raw.addAvoids);
+  let dropped = addL.dropped + addA.dropped;
+  const removeLikes = new Set<string>();
+  const removeAvoids = new Set<string>();
+  for (const r of strs(raw.removeLikes, 12)) { const m = exact(curLikes, r); if (m) removeLikes.add(m); else dropped++; }
+  for (const r of strs(raw.removeAvoids, 12)) { const m = exact(curAvoids, r); if (m) removeAvoids.add(m); else dropped++; }
+  // A new avoid replaces the same item as a like, and the other way round. Items already there are not added twice.
+  const addLikes = addL.kept.filter((t) => {
+    if (exact(curLikes, t.item) && !removeLikes.has(exact(curLikes, t.item) as string)) return false;
+    const a = exact(curAvoids, t.item);
+    if (a) removeAvoids.add(a);
+    return true;
+  });
+  const addAvoids = addA.kept.filter((t) => {
+    if (exact(curAvoids, t.item) && !removeAvoids.has(exact(curAvoids, t.item) as string)) return false;
+    const l = exact(curLikes, t.item);
+    if (l) removeLikes.add(l);
+    return true;
+  });
+  return { addLikes, addAvoids, removeLikes: [...removeLikes], removeAvoids: [...removeAvoids], dropped, sourceKind: source === null ? 'image' : 'text' };
 }
 
 // ---------- Step 2: insight ----------
@@ -66,6 +115,12 @@ export async function runInsight(body: Json, deps: InsightDeps): Promise<Insight
   if (!likes.length) throw new HttpError(400, 'Turn on at least one like. Qloo ranks by taste fit, so it needs something to start from.');
   const city = String(body.city ?? '').trim().slice(0, 80);
   const { qloo } = deps;
+  // Gift and brand names used for this person before: filtered on our side, and sent to Qloo by id when we have the id.
+  const used = ((Array.isArray(body.exclude) ? body.exclude : []) as Json[])
+    .filter((x) => x && typeof x.name === 'string')
+    .slice(0, 24)
+    .map((x) => ({ name: String(x.name), id: typeof x.id === 'string' && x.id ? x.id : undefined }));
+  const excludeEntityIds = uniq(used.map((u) => u.id).filter((x): x is string => !!x));
 
   // 1. Resolve names to Qloo ids.
   const entityIds: string[] = [];
@@ -96,7 +151,7 @@ export async function runInsight(body: Json, deps: InsightDeps): Promise<Insight
   const [tagRes, placeRes, brandRes, movieRes] = await Promise.all([
     call('tag', { take: 12 }),
     city ? call('place', { city, priceMax: ctx.placePriceMax, take: 12 }) : Promise.resolve({ entities: [] as QlooEntity[], tags: [] as QlooTag[] }),
-    call('brand', { take: 12 }),
+    call('brand', { take: 12, excludeEntityIds }),
     call('movie', { take: 10 }),
   ]);
 
@@ -114,7 +169,11 @@ export async function runInsight(body: Json, deps: InsightDeps): Promise<Insight
       });
   };
   const places = clean(placeRes.entities);
-  const brands = clean(brandRes.entities);
+  const brands = clean(brandRes.entities).filter((e) => {
+    if (!used.some((u) => sameName(u.name, e.name) || (u.id && u.id === e.id))) return true;
+    filteredOut.push({ name: e.name, because: 'gift used before' });
+    return false;
+  });
   const movies = clean(movieRes.entities);
   if (!places.length && !brands.length && !movies.length) throw new HttpError(502, 'Qloo returned nothing for that mix. Turn another like on, or check the city.');
 
@@ -167,6 +226,7 @@ export async function runInsight(body: Json, deps: InsightDeps): Promise<Insight
       quote: like.quote,
       quoteSource: like.source,
       sample: chosen.sample,
+      entityId: chosen.id,
     };
     if (kind === 'gift' && ctx.budget) {
       // Gemini is told the budget, but a price in its copy that is outside it is never shown.

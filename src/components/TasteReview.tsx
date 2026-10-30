@@ -1,7 +1,5 @@
-import type { Taste } from '../lib/types';
+import type { Toggle } from '../lib/chats';
 import { Check, Minus, Plus } from './Icons';
-
-export interface Toggle { taste: Taste; on: boolean }
 
 interface Props {
   likes: Toggle[];

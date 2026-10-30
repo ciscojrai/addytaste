@@ -1,6 +1,6 @@
 // Occasions, budgets and per-occasion settings. Used by the page and by the server.
 
-export type OccasionId = 'mom_birthday' | 'summer_date' | 'anniversary' | 'white_elephant';
+export type OccasionId = 'mothers_day' | 'birthday' | 'holidays' | 'anniversary' | 'date_night' | 'valentines' | 'fathers_day' | 'white_elephant';
 export type Group = 'work' | 'friends' | 'family';
 
 export const BUDGETS: Record<Group, { min: number; max: number }> = {
@@ -14,81 +14,30 @@ export const GROUP_LABEL: Record<Group, string> = { work: 'Work', friends: 'Frie
 export interface OccasionDef {
   id: OccasionId;
   label: string;
-  /** Default name for the person's chat thread. */
-  person: string;
-  /** Thread suffix: "Mom, birthday". */
-  suffix: string;
   /** Qloo filter.price_level.max for place results (1 to 4). */
   placePriceMax: number;
   placeLabel: string;
   giftLabel: string;
   backupLabel: string;
-  readerHint: string;
-  placeholder: string;
-  example: string;
-  exampleCity: string;
+  /** Which sample data set to use when there is no Qloo key. */
+  sampleKey: string;
 }
 
 export const OCCASIONS: OccasionDef[] = [
-  {
-    id: 'mom_birthday',
-    label: "Mom's birthday",
-    person: 'Mom',
-    suffix: 'birthday',
-    placePriceMax: 3,
-    placeLabel: 'Place for a birthday lunch or outing',
-    giftLabel: 'Gift brand',
-    backupLabel: 'Backup plan',
-    readerHint: "The text or screenshot is what the reader's mom said about herself. Capture hobbies, brands, books, music, places and foods she likes, and anything she dislikes or already has too much of.",
-    placeholder: 'Paste what she said she likes, or attach a screenshot.',
-    example: "I'd be happy with anything for the garden. I love Fleetwood Mac and Dolly Parton records, and brunch somewhere with a patio. Please no more candles, I have a hundred.",
-    exampleCity: 'New Orleans',
-  },
-  {
-    id: 'summer_date',
-    label: 'Summer date',
-    person: 'Date',
-    suffix: 'summer date',
-    placePriceMax: 2,
-    placeLabel: 'Place for the date',
-    giftLabel: 'Small gift brand',
-    backupLabel: 'Rain backup',
-    readerHint: 'The text or screenshot is what a date said they like. Capture music, film, food, drink, places and activities they like or want to avoid.',
-    placeholder: 'Paste what they said, or attach a screenshot.',
-    example: 'I love live jazz and rooftop patios, and anything with oysters. I like Frank Ocean and Wes Anderson. Not into loud clubs or country music.',
-    exampleCity: 'New Orleans',
-  },
-  {
-    id: 'anniversary',
-    label: 'Anniversary',
-    person: 'Partner',
-    suffix: 'anniversary',
-    placePriceMax: 4,
-    placeLabel: 'Place for dinner',
-    giftLabel: 'Gift brand',
-    backupLabel: 'Backup plan',
-    readerHint: 'The text or screenshot is what the reader\'s partner said they like. Capture foods, places, music, films, brands and anything they want to avoid.',
-    placeholder: 'Paste what your partner said, or attach a screenshot.',
-    example: "Honestly a quiet dinner with good wine and a piano somewhere is perfect for me. I love Norah Jones and old Italian movies. No tasting menus that take three hours.",
-    exampleCity: 'New Orleans',
-  },
-  {
-    id: 'white_elephant',
-    label: 'White Elephant',
-    person: 'Swap',
-    suffix: 'white elephant',
-    placePriceMax: 2,
-    placeLabel: 'Place to shop or celebrate',
-    giftLabel: 'Gift brand',
-    backupLabel: 'Backup plan',
-    readerHint: 'The text or screenshot is a gift-swap invite or what someone in the swap said they like. Capture hobbies, brands, books, music, foods and anything they dislike, plus any price limit mentioned.',
-    placeholder: 'Paste the invite or what they said, or attach a screenshot.',
-    example: "I'm a huge coffee person and I run on espresso. I love Michael Lewis books and I listen to Sade on my commute. No alcohol, please.",
-    exampleCity: 'New Orleans',
-  },
+  { id: 'mothers_day', label: "Mother's Day", placePriceMax: 3, placeLabel: "Place for a Mother's Day brunch", giftLabel: 'Gift brand', backupLabel: 'Backup plan', sampleKey: 'mom_birthday' },
+  { id: 'birthday', label: 'Birthday', placePriceMax: 3, placeLabel: 'Place for a birthday outing', giftLabel: 'Gift brand', backupLabel: 'Backup plan', sampleKey: 'mom_birthday' },
+  { id: 'holidays', label: 'Holidays / Christmas', placePriceMax: 3, placeLabel: 'Place for a holiday outing', giftLabel: 'Gift brand', backupLabel: 'Backup plan', sampleKey: 'we-family' },
+  { id: 'anniversary', label: 'Anniversary', placePriceMax: 4, placeLabel: 'Place for dinner', giftLabel: 'Gift brand', backupLabel: 'Backup plan', sampleKey: 'anniversary' },
+  { id: 'date_night', label: 'Date night', placePriceMax: 2, placeLabel: 'Place for the date', giftLabel: 'Small gift brand', backupLabel: 'Rain backup', sampleKey: 'summer_date' },
+  { id: 'valentines', label: "Valentine's", placePriceMax: 3, placeLabel: "Place for Valentine's dinner", giftLabel: 'Gift brand', backupLabel: 'Backup plan', sampleKey: 'anniversary' },
+  { id: 'fathers_day', label: "Father's Day", placePriceMax: 3, placeLabel: "Place for a Father's Day lunch", giftLabel: 'Gift brand', backupLabel: 'Backup plan', sampleKey: 'we-family' },
+  { id: 'white_elephant', label: 'White Elephant', placePriceMax: 2, placeLabel: 'Place to shop or celebrate', giftLabel: 'Gift brand', backupLabel: 'Backup plan', sampleKey: 'we-work' },
 ];
 
 export const occasionById = (id: string): OccasionDef | undefined => OCCASIONS.find((o) => o.id === id);
+
+/** Old (v1) occasion ids, for migrating saved chats. */
+export const LEGACY_OCCASION: Record<string, OccasionId> = { mom_birthday: 'birthday', summer_date: 'date_night', anniversary: 'anniversary', white_elephant: 'white_elephant' };
 
 export interface OccasionContext {
   def: OccasionDef;
@@ -115,11 +64,20 @@ export function resolveOccasion(id: string, group?: string | null): OccasionCont
       placePriceMax: group === 'family' ? 3 : 2,
     };
   }
-  return { def, group: null, budget: null, workSafe: false, key: def.id, placePriceMax: def.placePriceMax };
+  return { def, group: null, budget: null, workSafe: false, key: def.sampleKey, placePriceMax: def.placePriceMax };
 }
 
-export function threadTitle(person: string, ctx: Pick<OccasionContext, 'def' | 'group'>): string {
-  const p = person.trim() || ctx.def.person;
-  if (ctx.def.id === 'white_elephant') return `${p}, ${ctx.def.suffix} (${GROUP_LABEL[ctx.group ?? 'work']})`;
-  return `${p}, ${ctx.def.suffix}`;
+/** What the Taste Reader is told about the source text or screenshot. It never guesses who the chat is about. */
+export function readerHint(label: string): string {
+  return `The text or screenshot is what someone said about themselves, or what a person shares about someone, while planning ${label}. Capture hobbies, brands, books, music, places and foods they like, and anything they dislike or already have too much of.`;
+}
+
+const GIFT_EXAMPLE = "I'd be happy with anything for the garden. I love Fleetwood Mac and Dolly Parton records, and brunch somewhere with a patio. Please no more candles, I have a hundred.";
+const DATE_EXAMPLE = 'I love live jazz and rooftop patios, and anything with oysters. I like Frank Ocean and Wes Anderson. Not into loud clubs or country music.';
+const HOME_EXAMPLE = "I live on coffee and I'm always reading something by Michael Lewis. I put Sade on in the car. Please no more neckties.";
+/** An example paste for the occasion. Examples are neutral: they name no relation. */
+export function exampleFor(occasion: string): string {
+  if (['date_night', 'anniversary', 'valentines'].includes(occasion)) return DATE_EXAMPLE;
+  if (['holidays', 'fathers_day', 'white_elephant'].includes(occasion)) return HOME_EXAMPLE;
+  return GIFT_EXAMPLE;
 }

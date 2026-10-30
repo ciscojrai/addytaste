@@ -12,7 +12,10 @@ export const getStatus = async (): Promise<Status> => (await fetch('/api/status'
 
 export const readTastes = (b: { occasion: string; group: string | null; text?: string; image?: { mime: string; data: string } }) => post<ReadResult>('/api/read', b);
 
-export const getInsight = (b: { occasion: string; group: string | null; city: string; text: string | null; likes: Taste[]; avoids: Taste[]; runId: string }, signal?: AbortSignal) =>
+export interface ChipUpdateResult { addLikes: Taste[]; addAvoids: Taste[]; removeLikes: string[]; removeAvoids: string[]; dropped: number; sourceKind: 'text' | 'image' }
+export const updateChips = (b: { text?: string; image?: { mime: string; data: string }; likes: string[]; avoids: string[] }) => post<ChipUpdateResult>('/api/update', b);
+
+export const getInsight = (b: { occasion: string; group: string | null; city: string; text: string | null; likes: Taste[]; avoids: Taste[]; runId: string; exclude?: { name: string; id?: string }[] }, signal?: AbortSignal) =>
   post<InsightResult>('/api/insight', b, signal);
 
 /** Downscale a screenshot in the browser (max 1600px, JPEG) so the upload stays small. Nothing is stored. */

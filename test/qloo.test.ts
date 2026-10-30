@@ -27,6 +27,11 @@ describe('qloo.ts request building', () => {
     expect(TYPE.movie).toBe('urn:entity:movie');
   });
 
+  it('sends already-used gift ids as filter.exclude.entities', () => {
+    expect(buildInsightsParams({ type: 'brand', entityIds: ['E1'], excludeEntityIds: ['OLD1', 'OLD2'] })['filter.exclude.entities']).toBe('OLD1,OLD2');
+    expect(buildInsightsParams({ type: 'brand', entityIds: ['E1'] })).not.toHaveProperty('filter.exclude.entities');
+  });
+
   it('clamps price_level.max to 1-4 and take to 1-50', () => {
     const p = buildInsightsParams({ type: 'place', priceMax: 9, take: 500 });
     expect(p['filter.price_level.max']).toBe(4);

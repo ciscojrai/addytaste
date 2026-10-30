@@ -31,6 +31,8 @@ export interface ResultCard {
   /** Plain Stay22 deep link, place cards only. */
   stay22?: string;
   sample: boolean;
+  /** Qloo entity id of the pick, used to exclude it next time. */
+  entityId?: string;
 }
 
 export interface InferenceSegment {

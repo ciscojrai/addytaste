@@ -1,49 +1,42 @@
-// Hearted cards, kept in this browser's localStorage with their card data and the chat they came from.
+// Hearted cards, kept in this browser's localStorage with their card data, the chat and the occasion.
+// Likes point at the chat by its stable id, so renaming a chat never breaks them.
 // Pasted text and screenshots are never part of this: a card is the pick itself (name, tags, idea, why, the short quote).
-import { threadId } from './storage';
+import { LIKES_KEY_V2, type LikedCardV2, type StorageLike } from './chats';
 import type { ResultCard } from './types';
 
-export interface LikedCard {
-  id: string;
-  threadId: string;
-  /** The chat name, for example "Mom, birthday". */
-  threadTitle: string;
-  likedAt: number;
-  card: ResultCard;
-}
+export type LikedCard = LikedCardV2;
+export const LIKES_KEY = LIKES_KEY_V2;
 
-export const LIKES_KEY = 'addytaste.likes.v1';
+const store = (s?: StorageLike) => s ?? (globalThis as { localStorage?: Storage }).localStorage;
 
-const store = (s?: Pick<Storage, 'getItem' | 'setItem'>) => s ?? (globalThis as { localStorage?: Storage }).localStorage;
-
-export const likeId = (threadTitle: string, card: Pick<ResultCard, 'kind' | 'name'>) => `${threadId(threadTitle)}|${card.kind}|${card.name.toLowerCase()}`;
+export const likeId = (chatId: string, occasion: string, card: Pick<ResultCard, 'kind' | 'name'>) => `${chatId}|${occasion}|${card.kind}|${card.name.toLowerCase()}`;
 
 /** Copy only the known card fields, so nothing else can ride along into storage. */
 function cleanCard(c: ResultCard): ResultCard {
   return {
     kind: c.kind, label: c.label, name: c.name, tags: [...c.tags], idea: c.idea, why: c.why, because: c.because, quote: c.quote, quoteSource: c.quoteSource,
-    address: c.address, lat: c.lat, lon: c.lon, stay22: c.stay22, sample: c.sample,
+    address: c.address, lat: c.lat, lon: c.lon, stay22: c.stay22, sample: c.sample, entityId: c.entityId,
   };
 }
 
-export function loadLikes(s?: Pick<Storage, 'getItem' | 'setItem'>): LikedCard[] {
+export function loadLikes(s?: StorageLike): LikedCard[] {
   try {
     const v = JSON.parse(store(s)?.getItem(LIKES_KEY) || '[]');
-    return Array.isArray(v) ? v.filter((x) => x && x.id && x.card && x.threadTitle) : [];
+    return Array.isArray(v) ? v.filter((x) => x && x.id && x.card && x.chatId) : [];
   } catch { return []; }
 }
 
-export function saveLikes(list: LikedCard[], s?: Pick<Storage, 'getItem' | 'setItem'>) {
+export function saveLikes(list: LikedCard[], s?: StorageLike) {
   try { store(s)?.setItem(LIKES_KEY, JSON.stringify(list.slice(0, 200))); } catch { /* storage full or blocked */ }
 }
 
-export const isLiked = (list: LikedCard[], threadTitle: string, card: Pick<ResultCard, 'kind' | 'name'>) => list.some((l) => l.id === likeId(threadTitle, card));
+export const isLiked = (list: LikedCard[], chatId: string, occasion: string, card: Pick<ResultCard, 'kind' | 'name'>) => list.some((l) => l.id === likeId(chatId, occasion, card));
 
-/** Heart on adds the card (newest first); heart off removes it. */
-export function toggleLike(list: LikedCard[], card: ResultCard, threadTitle: string, now = Date.now()): LikedCard[] {
-  const id = likeId(threadTitle, card);
+/** Heart on adds the card (newest first); heart off removes it. `chatTitle` is only a fallback label: the link is the chat id. */
+export function toggleLike(list: LikedCard[], card: ResultCard, chat: { id: string; title: string }, occasion: string, now = Date.now()): LikedCard[] {
+  const id = likeId(chat.id, occasion, card);
   if (list.some((l) => l.id === id)) return list.filter((l) => l.id !== id);
-  return [{ id, threadId: threadId(threadTitle), threadTitle, likedAt: now, card: cleanCard(card) }, ...list];
+  return [{ id, chatId: chat.id, chatTitle: chat.title, occasion, likedAt: now, card: cleanCard(card) }, ...list];
 }
 
 export const removeLike = (list: LikedCard[], id: string) => list.filter((l) => l.id !== id);

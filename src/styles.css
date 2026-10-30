@@ -299,3 +299,29 @@ details.quotes q { color: var(--foreground); }
   .scroll { scroll-behavior: auto; }
 }
 .demo main, .demo-nav { position: relative; z-index: 1; }
+
+/* ---------- chats: title, notes, past occasions ---------- */
+.head-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
+.head-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.title-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.title-edit { min-width: 0; flex: 1 1 auto; max-width: 420px; }
+.title-input { width: 100%; font-weight: 650; font-size: 1.05rem; }
+.title-error { margin-top: 4px; font-size: 0.78rem; color: var(--avoid); }
+.icon-btn.small { width: 30px; height: 30px; border-radius: 8px; flex: none; }
+.chat-note { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--hl-bg); font-size: 0.86rem; line-height: 1.4; }
+.chat-note time { color: var(--muted-foreground); font-size: 0.78rem; white-space: nowrap; }
+.last-time { margin: 0; padding: 10px 14px; border-radius: var(--radius); border: 1px dashed var(--border); background: var(--glass-strong); font-size: 0.88rem; line-height: 1.5; overflow-wrap: anywhere; }
+.past-occ { border: 1px solid var(--border); border-radius: 14px; background: var(--glass-strong); }
+.past-occ summary { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; cursor: pointer; list-style: none; }
+.past-occ summary::-webkit-details-marker { display: none; }
+.past-occ summary::after { content: "Show"; align-self: flex-start; margin-top: 4px; font-size: 0.74rem; font-weight: 650; color: var(--primary); }
+.past-occ[open] summary::after { content: "Hide"; }
+.po-title { font-weight: 650; }
+.past-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; align-items: flex-start; }
+.past-body .cards { width: 100%; }
+.thread span .sample-tag { margin-right: 6px; font-style: normal; }
+.panel-head h1 { overflow-wrap: anywhere; }
+@media (max-width: 820px) { .head-badges { width: 100%; } }
+
+.scrim { display: none; }
+@media (max-width: 820px) { .scrim { display: block; position: fixed; inset: 0; z-index: 29; border: 0; padding: 0; background: transparent; cursor: default; } }

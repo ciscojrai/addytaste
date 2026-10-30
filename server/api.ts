@@ -1,6 +1,6 @@
 // One handler for every /api/* route. Used by the Vite dev server and by the Netlify function wrapper.
 import { createGemini } from './gemini';
-import { HttpError, runInsight, runRead } from './pipeline';
+import { HttpError, runInsight, runRead, runUpdate } from './pipeline';
 import { createQlooClient, SAMPLE_BADGE } from './qloo';
 
 type Env = Record<string, string | undefined>;
@@ -20,6 +20,7 @@ export async function handleApi(req: Request, env: Env = process.env): Promise<R
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body || typeof body !== 'object') return json(400, { error: 'Send JSON.' });
     if (route === 'read') return json(200, await runRead(body, gemini));
+    if (route === 'update') return json(200, await runUpdate(body, gemini));
     if (route === 'insight') return json(200, await runInsight(body, { qloo, gemini, stay22Aid: env.STAY22_AID || 'newaddy' }));
     return json(404, { error: 'Not found.' });
   } catch (e) {

@@ -1,5 +1,4 @@
 import type { InsightResult, ResultCard } from '../lib/types';
-import { isLiked, type LikedCard } from '../lib/likes';
 import { External, Heart } from './Icons';
 
 function Card({ c, liked, onHeart }: { c: ResultCard; liked: boolean; onHeart?: () => void }) {
@@ -35,13 +34,13 @@ function Card({ c, liked, onHeart }: { c: ResultCard; liked: boolean; onHeart?: 
   );
 }
 
-interface Props { result: InsightResult; threadTitle: string; hearts: LikedCard[]; onHeart?: (card: ResultCard, threadTitle: string) => void }
+interface Props { result: InsightResult; likedFor?: (card: ResultCard) => boolean; onHeart?: (card: ResultCard) => void }
 
-export function ResultCards({ result, threadTitle, hearts, onHeart }: Props) {
+export function ResultCards({ result, likedFor, onHeart }: Props) {
   const kinds = new Set(result.cards.map((c) => c.kind));
   return (
     <div className="cards">
-      {result.cards.map((c) => <Card key={c.kind} c={c} liked={isLiked(hearts, threadTitle, c)} onHeart={onHeart ? () => onHeart(c, threadTitle) : undefined} />)}
+      {result.cards.map((c) => <Card key={c.kind} c={c} liked={likedFor?.(c) ?? false} onHeart={onHeart ? () => onHeart(c) : undefined} />)}
       {!kinds.has('place') && (
         <div className="card empty-card"><div>{result.city ? 'Qloo did not return a place for this mix. Try another like.' : 'Add a city above to get a place for this plan.'}</div></div>
       )}

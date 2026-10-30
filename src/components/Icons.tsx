@@ -23,3 +23,4 @@ export const Heart = ({ filled = false }: { filled?: boolean }) => (
     <path d="M12 20s-7-4.35-9-8.5C1.5 8 3.5 4.5 7 4.5c2 0 3.5 1 5 3 1.5-2 3-3 5-3 3.5 0 5.5 3.5 4 7-2 4.15-9 8.5-9 8.5z" />
   </svg>
 );
+export const Pencil = () => <Svg><path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16v4z" /><path d="M13.5 6.5l4 4" /></Svg>;
