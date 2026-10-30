@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fileToImage, getInsight, readTastes, type Status } from '../lib/api';
 import { BUDGETS, GROUP_LABEL, OCCASIONS, occasionById, resolveOccasion, threadTitle, type Group, type OccasionId } from '../lib/occasions';
+import type { LikedCard } from '../lib/likes';
 import { upsertRun, type SavedRun, type Thread } from '../lib/storage';
-import type { InsightResult, Taste } from '../lib/types';
+import type { InsightResult, ResultCard, Taste } from '../lib/types';
 import { ImageIcon, Menu, Send } from './Icons';
 import { InferencePanel } from './InferencePanel';
 import { MiniMap } from './MiniMap';
@@ -16,15 +17,17 @@ interface Props {
   active: Thread | null;
   onSaved: (title: string) => void;
   onMenu: () => void;
+  hearts: LikedCard[];
+  onHeart: (card: ResultCard, threadTitle: string) => void;
 }
 
 const newRunId = () => `run${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const fmt = (t: number) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-export function ChatPanel({ status, setThreads, active, onSaved, onMenu }: Props) {
-  const [occasion, setOccasion] = useState<OccasionId>('mom_birthday');
-  const [group, setGroup] = useState<Group>('work');
-  const [person, setPerson] = useState('');
+export function ChatPanel({ status, setThreads, active, onSaved, onMenu, hearts, onHeart }: Props) {
+  const [occasion, setOccasion] = useState<OccasionId>((active?.occasion as OccasionId) ?? 'mom_birthday');
+  const [group, setGroup] = useState<Group>((active?.group as Group) ?? 'work');
+  const [person, setPerson] = useState(active?.person && active.person !== occasionById(active.occasion)?.person ? active.person : '');
   const [city, setCity] = useState(() => localStorage.getItem('addytaste.city') ?? '');
   const [text, setText] = useState('');
   const [image, setImage] = useState<{ mime: string; data: string; preview: string } | null>(null);
@@ -218,7 +221,7 @@ export function ChatPanel({ status, setThreads, active, onSaved, onMenu }: Props
       </header>
 
       <div className="scroll" ref={scroller}>
-        {past.map((r) => <PastRun key={r.runId} run={r} onReopen={() => reopen(r)} />)}
+        {past.map((r) => <PastRun key={r.runId} run={r} chatTitle={active?.title ?? title} hearts={hearts} onHeart={onHeart} onReopen={() => reopen(r)} />)}
 
         {showWelcome && (
           <div className="welcome">
@@ -242,7 +245,7 @@ export function ChatPanel({ status, setThreads, active, onSaved, onMenu }: Props
               <TasteReview likes={likes} avoids={avoids} sourceKind={sourceKind} dropped={dropped} onToggle={toggle} />
               <InferencePanel result={result} loading={loading} error={error} runKey={runKey} />
             </div>
-            {result && <ResultCards result={result} />}
+            {result && <ResultCards result={result} threadTitle={savedTitle || title} hearts={hearts} onHeart={onHeart} />}
             {pins.length > 0 && (
               <section className="card mapbox" aria-label="Map">
                 <header>
@@ -283,7 +286,7 @@ export function ChatPanel({ status, setThreads, active, onSaved, onMenu }: Props
   );
 }
 
-function PastRun({ run, onReopen }: { run: SavedRun; onReopen: () => void }) {
+function PastRun({ run, chatTitle, hearts, onHeart, onReopen }: { run: SavedRun; chatTitle: string; hearts: LikedCard[]; onHeart: (card: ResultCard, threadTitle: string) => void; onReopen: () => void }) {
   const def = occasionById(run.occasion);
   const taste = (l: { taste: Taste; on: boolean }[]) => l.filter((x) => x.on).map((x) => x.taste.item).join(', ');
   return (
@@ -299,7 +302,7 @@ function PastRun({ run, onReopen }: { run: SavedRun; onReopen: () => void }) {
         </p>
         <div className="by">{run.result.inference.writtenBy}</div>
       </section>
-      <ResultCards result={run.result} />
+      <ResultCards result={run.result} threadTitle={chatTitle} hearts={hearts} onHeart={onHeart} />
     </section>
   );
 }

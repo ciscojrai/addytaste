@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { ChatPanel } from './components/ChatPanel';
 import { Sidebar } from './components/Sidebar';
 import { getStatus, type Status } from './lib/api';
+import { loadLikes, removeLike, saveLikes, toggleLike, type LikedCard } from './lib/likes';
+import type { ResultCard } from './lib/types';
 import { loadThreads, saveThreads, threadId, type Thread } from './lib/storage';
 
 export function useTheme() {
@@ -24,11 +26,13 @@ export default function App() {
   const [threads, setThreadsState] = useState<Thread[]>(loadThreads);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [session, setSession] = useState(0);
+  const [hearts, setHeartsState] = useState<LikedCard[]>(() => loadLikes());
   const [menu, setMenu] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
 
   useEffect(() => { getStatus().then(setStatus).catch(() => setStatus(null)); }, []);
   const setThreads = (fn: (t: Thread[]) => Thread[]) => setThreadsState((prev) => { const n = fn(prev); saveThreads(n); return n; });
+  const setHearts = (fn: (l: LikedCard[]) => LikedCard[]) => setHeartsState((prev) => { const n = fn(prev); saveLikes(n); return n; });
   const active = threads.find((t) => t.id === activeId) ?? null;
 
   return (
@@ -37,6 +41,8 @@ export default function App() {
       <div className="shell">
         <Sidebar
           threads={threads}
+          hearts={hearts}
+          onUnheart={(id) => setHearts((l) => removeLike(l, id))}
           activeId={activeId}
           open={menu}
           dark={dark}
@@ -46,7 +52,7 @@ export default function App() {
           onClose={() => setMenu(false)}
         />
         <div className="stage">
-          <ChatPanel key={session} status={status} threads={threads} setThreads={setThreads} active={active} onSaved={(title) => setActiveId(threadId(title))} onMenu={() => setMenu(true)} />
+          <ChatPanel key={session} status={status} threads={threads} setThreads={setThreads} active={active} onSaved={(title) => setActiveId(threadId(title))} onMenu={() => setMenu(true)} hearts={hearts} onHeart={(card: ResultCard, title: string) => setHearts((l) => toggleLike(l, card, title))} />
         </div>
       </div>
     </>

@@ -99,6 +99,22 @@ a { color: var(--primary); }
 .thread[aria-current="true"] { background: var(--hl-bg); }
 .thread b { display: block; font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
 .thread span { display: block; font-size: 0.76rem; color: var(--muted-foreground); margin-top: 2px; overflow-wrap: anywhere; }
+.tabs .count { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--hl-bg); color: var(--primary); font-size: 0.72rem; font-weight: 700; line-height: 18px; }
+.like-item { display: flex; align-items: stretch; border-radius: 10px; }
+.like-item:hover { background: var(--muted); }
+.like-item[aria-current="true"] { background: var(--hl-bg); }
+.like-open { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; padding: 9px 4px 9px 10px; border-radius: 10px; }
+.like-open:disabled { cursor: default; opacity: 0.7; }
+.like-open b { display: block; font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
+.like-open span { display: block; font-size: 0.76rem; color: var(--muted-foreground); margin-top: 2px; overflow-wrap: anywhere; }
+.like-remove { flex: none; width: 40px; border: 0; background: transparent; color: oklch(0.58 0.2 15); display: grid; place-items: center; border-radius: 10px; }
+.like-remove:hover { background: var(--muted); }
+.kind-right { display: inline-flex; align-items: center; gap: 6px; }
+.heart-btn { display: inline-grid; place-items: center; width: 36px; height: 36px; margin: -8px -8px -8px 0; border-radius: 50%; border: 0; background: transparent; color: var(--muted-foreground); transition: color 0.15s, transform 0.15s; }
+.heart-btn:hover { background: var(--muted); color: oklch(0.58 0.2 15); }
+.heart-btn.on { color: oklch(0.58 0.2 15); }
+.heart-btn.on svg { transform: scale(1.08); }
+.dark .heart-btn.on, .dark .like-remove { color: oklch(0.72 0.17 15); }
 .side-empty { color: var(--muted-foreground); font-size: 0.85rem; padding: 8px 10px; line-height: 1.45; }
 .side-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.84rem; }
 .icon-btn { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); }

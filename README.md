@@ -1,6 +1,6 @@
 # AddyTaste (aistudio-newaddy)
 
-A newaddy-style chat for the Qloo Agentic Hackathon. Paste what someone said they like, or attach a screenshot. It reads likes and avoids, lets you toggle each one, and rewrites a live "Predictive inference" paragraph from the tags Qloo returns. Below it sit three picks: a place (with a small map and a Stay22 link), a gift brand and a backup plan. Each result is saved into that person's chat thread (for example "Mom, birthday") in your browser's localStorage.
+A newaddy-style chat for the Qloo Agentic Hackathon. Paste what someone said they like, or attach a screenshot. It reads likes and avoids, lets you toggle each one, and rewrites a live "Predictive inference" paragraph from the tags Qloo returns. Below it sit three picks: a place (with a small map and a Stay22 link), a gift brand and a backup plan. Each result is saved into that person's chat thread (for example "Mom, birthday") in your browser's localStorage. Tap the heart on any place, gift or backup card to save it to the sidebar's Likes tab (stored with its chat name; tapping a liked item opens that chat).
 
 Not an official Qloo product. No Qloo logos or assets are used.
 
@@ -41,7 +41,7 @@ With no `QLOO_API_KEY` the server reads clearly fake JSON from `.samples/qloo/` 
 
 ## Privacy
 
-Pasted text and screenshots are processed in memory and never saved. A saved run keeps the chips (item plus quote) and the result, in this browser only.
+Pasted text and screenshots are processed in memory and never saved. A saved run keeps the chips (item plus quote) and the result, in this browser only. A liked card keeps only the card itself and its chat name.
 
 ## Demo page
 
